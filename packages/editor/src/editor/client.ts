@@ -1,4 +1,5 @@
 /** Calls to the editor's dev server (packages/editor/server/projectApi.ts). */
+import type { ProjectSettingsJson } from '@rs/core';
 export interface FileEntry {
   path: string;
   dir: boolean;
@@ -16,7 +17,7 @@ const q = (p: string) => encodeURIComponent(p);
 
 export const api = {
   files: async () => (await json<{ files: FileEntry[] }>(await fetch('/__rs/api/files'))).files,
-  project: async () => json<{ name: string; startScene: string; editorScene?: string; root: string }>(await fetch('/__rs/api/project')),
+  project: async () => json<ProjectSettingsJson & { name: string; startScene: string; root: string }>(await fetch('/__rs/api/project')),
   readText: async (path: string) => {
     const r = await fetch('/project/' + path.split('/').map(encodeURIComponent).join('/'), { cache: 'no-cache' });
     if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MissingComponent, Quaternion, Types, Vector3, eulerDegFromQuat, quatFromEulerDeg, scriptTypes, type Component, type GameObject } from '@rs/core';
+import { MissingComponent, Physics, Quaternion, Types, Vector3, eulerDegFromQuat, quatFromEulerDeg, scriptTypes, type Component, type GameObject } from '@rs/core';
 import { editor } from '../editor/Editor';
 import { assetVisual, Icons } from './icons';
 import { FieldRow, TextInput, Vec3Input } from './fields';
@@ -142,13 +142,31 @@ function ObjectInspector({ go, count }: { go: GameObject; count: number }) {
             editor.changed();
           }}
         />
+        <select
+          className="rs-layer-select"
+          title="Physics layer"
+          value={go.layer}
+          onChange={(e) => {
+            editor.recordUndo('Layer');
+            for (const g of editor.selectedObjects) g.layer = +e.target.value;
+            editor.changed();
+          }}
+        >
+          {Physics.layers.map((n, i) =>
+            n || i === go.layer ? (
+              <option key={i} value={i}>
+                {n || `Layer ${i}`}
+              </option>
+            ) : null,
+          )}
+        </select>
       </div>
       {addOpen ? (
         <div className="rs-overlay" onMouseDown={() => setAddOpen(null)}>
           <MenuList items={addItems()} x={addOpen.x} y={addOpen.y} onClose={() => setAddOpen(null)} />
         </div>
       ) : null}
-      {go.prefab ? <div className="rs-hint">Prefab: {go.prefab}</div> : null}
+      <PrefabBar go={go} />
       <Section title="Global">
         <div className="rs-field">
           <label>Position</label>
@@ -203,6 +221,46 @@ function ObjectInspector({ go, count }: { go: GameObject; count: number }) {
         return <ComponentView key={`${go.id}:${i}:${type}`} c={c} others={others} />;
       })}
     </>
+  );
+}
+
+/** Prefab instance bar: the prefab, Open / Select, and for the instance root Apply / Revert / Unpack. */
+function PrefabBar({ go }: { go: GameObject }) {
+  useTicker(true, 700); // override state follows edits
+  const root = editor.prefabRootOf(go);
+  if (!root?.prefab) return null;
+  const path = root.prefab;
+  const isRoot = root === go;
+  const overrides = isRoot && editor.hasOverrides(go);
+  const name = path.slice(path.lastIndexOf('/') + 1).replace(/\.pfb\.json$/, '');
+  return (
+    <div className="rs-prefab-bar">
+      <Icons.Prefab size={13} />
+      <span className="rs-prefab-name" title={path}>
+        {isRoot ? name : `${name} (part of)`}
+      </span>
+      {overrides ? <span className="rs-prefab-mod" title="This instance differs from the prefab">overrides</span> : null}
+      <span className="rs-grow" />
+      <button className="rs-btn small" onClick={() => void editor.openPrefab(path)}>
+        Open
+      </button>
+      <button className="rs-btn small" onClick={() => void editor.selectAsset(path)}>
+        Select
+      </button>
+      {isRoot ? (
+        <>
+          <button className="rs-btn small" disabled={!overrides} title="Write this instance into the prefab (every instance changes)" onClick={() => void editor.applyPrefab(go)}>
+            Apply
+          </button>
+          <button className="rs-btn small" disabled={!overrides} title="Drop this instance's changes" onClick={() => editor.revertPrefab(go)}>
+            Revert
+          </button>
+          <button className="rs-btn small" title="Make it a plain object (no longer linked to the prefab)" onClick={() => editor.unpackPrefab(go)}>
+            Unpack
+          </button>
+        </>
+      ) : null}
+    </div>
   );
 }
 
@@ -296,10 +354,15 @@ function AssetInspector({ path }: { path: string }) {
     return (
       <>
         {head}
-        <button className="rs-btn" onClick={() => void editor.instantiatePrefab(path)}>
-          Add to Scene
-        </button>
-        <div className="rs-hint">Drag it into the Hierarchies or the Runtime view to place it.</div>
+        <div className="rs-btn-row">
+          <button className="rs-btn" onClick={() => void editor.instantiatePrefab(path)}>
+            Add to Scene
+          </button>
+          <button className="rs-btn" onClick={() => void editor.openPrefab(path)}>
+            Open Prefab
+          </button>
+        </div>
+        <div className="rs-hint">Drag it into the Hierarchies or the Runtime view to place it; double-click to edit it.</div>
       </>
     );
   if (v.kind === 'Script') {

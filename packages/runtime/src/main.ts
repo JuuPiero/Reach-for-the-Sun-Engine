@@ -2,10 +2,11 @@
 //   ?scene=Assets/Scenes/Other.scn.json   start on another scene
 import 'virtual:rs/scripts';
 import { project } from 'virtual:rs/project';
-import { Application, Assets, Physics } from '@rs/core';
+import { Application, Assets, Physics, ProjectSettings } from '@rs/core';
 import { Player } from './Player';
 
 Assets.baseUrl = './';
+ProjectSettings.apply(project);
 const canvas = document.getElementById('rs-canvas') as HTMLCanvasElement;
 const player = new Player(canvas, project.name);
 const scene = new URLSearchParams(location.search).get('scene') ?? project.startScene;

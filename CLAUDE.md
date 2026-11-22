@@ -32,7 +32,9 @@ packages/core            @rs/core — math (Babylon's Vector3 / Quaternion / Col
                          MotionFsm.ts (.fsm.json state machines), Input (keys / mouse / gamepad / pointer lock), Application,
                          Debug, SceneManager.ts (SceneManager + Screen), Tween.ts, Audio.ts + components/audio.ts, components/ui.ts
                          (UIText / UIImage / UIPanel / UIButton data), SaveData.ts, Material.ts (.mat.json = built-in UserData type),
-                         components/environment.ts (sky / fog / post), components/particles.ts (ParticleSystem settings + play state)
+                         components/environment.ts (sky / fog / post), components/particles.ts (ParticleSystem settings + play state),
+                         ProjectSettings.ts (rs.project.json → Physics / Input); serialization.ts also holds prefab instances (compact
+                         overrides: expandInstance / collapseInstance / canonicalPrefab)
 packages/render-babylon  BabylonBackend: mirrors a Scene into Babylon every frame (sync → render), picking, model loading, Motion → AnimationGroups;
                          materials.ts (Material → StandardMaterial), environment.ts (sky dome, fog, image processing, bloom / FXAA),
                          particles.ts (ParticleSystem → Babylon particles), debugLines.ts (Debug.drawLine)
@@ -108,3 +110,11 @@ scripts/e2e/             headless Chrome driver (driver.mjs) + editor / game che
   code must test `isUserDataPath(path)`, never `.endsWith('.user.json')`.
 - Textures in render-babylon come from `MaterialCache.texture(path, tiling, alpha)` (cached per combination); don't mutate
   `uScale` / `hasAlpha` on a cached texture.
+- Prefab instances save as diffs against `canonicalPrefab(data)`: anything that swaps a prefab's data must serialize the scene
+  *before* (old data) and rebuild after (new data) — see `Editor.prefabFileChanged` / `applyPrefab`. Never set
+  `Assets.prefabRef(p).data = null` while instances exist (use `Assets.reloadPrefab`, which swaps in one step).
+- New per-object state that users can change on instance children must be added to the instance diff (`collapseInstance` /
+  `expandInstance`, like `layer`), or it is lost on reload.
+- Collider signatures in RapierPhysics include the collision groups: anything that affects filtering must be in the signature.
+- The editor's dev server (packages/editor/server, runtime/vite) is Node code: restart the editor after changing it (Vite doesn't
+  reload it), e.g. `readProject`.

@@ -34,6 +34,16 @@ import {
   isUserDataPath,
   userDataExt,
   emptyFsm,
+  ProjectSettings,
+  type ProjectSettingsJson,
+  newReadContext,
+  deserializeGameObject,
+  resolveReferences,
+  unpackInstance,
+  linkInstance,
+  canonicalPrefab,
+  type PrefabJson,
+  type GameObjectJson,
   type MotionFsmData,
   type Component,
   type LogEntry,
@@ -65,6 +75,8 @@ export class Editor {
   projectName = '';
   projectRoot = '';
   startScene = '';
+  /** rs.project.json (Project Settings window). */
+  projectSettings: ProjectSettingsJson = {};
   files: FileEntry[] = [];
   scene: Scene = new Scene('Untitled');
   dirty = false;
@@ -116,6 +128,9 @@ export class Editor {
     Assets.baseUrl = '/project/';
     await initPhysics();
     const p = await api.project();
+    const { root: _root, ...settings } = p;
+    this.projectSettings = settings;
+    ProjectSettings.apply(settings);
     this.projectName = p.name;
     SaveData.namespace = `editor:${p.name}`;
     SceneManager._setHost({ load: (path) => this.loadSceneInPlay(path) });
@@ -136,7 +151,9 @@ export class Editor {
     const own = this.ownWrites.get(path);
     if (own && Date.now() - own < 1500) {
       this.ownWrites.delete(path);
-    } else if (kind === 'change' && (isUserDataPath(path) || path.endsWith('.pfb.json') || path.endsWith('.fsm.json'))) {
+    } else if (kind === 'change' && path.endsWith('.pfb.json')) {
+      void this.prefabFileChanged(path);
+    } else if (kind === 'change' && (isUserDataPath(path) || path.endsWith('.fsm.json'))) {
       Assets.invalidate(path);
       if (path === this.selectedAsset) void this.selectAsset(path);
     } else if (kind === 'change' && path === this.scene.path) {
@@ -185,6 +202,7 @@ export class Editor {
 
   newScene(force = false): void {
     if (!force && !this.confirmDiscard()) return;
+    this.prefabMode = null;
     if (this.mode !== 'edit') this.stop();
     const s = new Scene('Untitled');
     const env = s.root.addFolder('Environment');
@@ -214,6 +232,7 @@ export class Editor {
 
   async openScene(path: string, force = false): Promise<void> {
     if (!force && !this.confirmDiscard()) return;
+    this.prefabMode = null;
     if (this.mode !== 'edit') this.stop();
     try {
       Assets.invalidate(path);
@@ -227,6 +246,7 @@ export class Editor {
   }
 
   async saveScene(saveAs = false): Promise<void> {
+    if (this.prefabMode && this.mode === 'edit') return this.savePrefab();
     if (this.mode !== 'edit') {
       Debug.warn('Stop play mode before saving the scene');
       return;
@@ -562,6 +582,7 @@ export class Editor {
 
   // ---- play mode --------------------------------------------------------------------------------------------------------
   play(): void {
+    if (this.prefabMode) return Debug.warn('Back to the scene to play (prefab mode)');
     if (this.mode === 'pause') {
       this.mode = 'play';
       this.emit('mode');
@@ -588,12 +609,14 @@ export class Editor {
       return this.scene;
     }
     const next = await loadScene(path);
+    const keep = this.scene._takePersistent();
     this.scene.end();
     this.scene = next;
     SceneManager._setActive(next);
     this.selection = [];
     Application._reset();
     next.begin();
+    SceneManager._carry(keep, next);
     this.emit('scene', 'selection', 'inspector');
     return next;
   }
@@ -690,17 +713,182 @@ export class ${finalName} extends Behavior {
     return p;
   }
 
-  /** Saves a GameObject subtree as a prefab file (RE: drag an object into the Asset Browser). */
+  /** Saves a GameObject subtree as a prefab file (RE: drag an object into the Asset Browser); the object becomes its instance. */
   async createPrefab(go: GameObject, dir = this.assetFolder): Promise<string> {
     const p = this.freeAssetPath(dir, go.name.replace(/[\\/:*?"<>|]/g, '_'), '.pfb.json');
-    await this.write(p, { format: 1, gameObject: serializeGameObject(go) });
-    Assets.invalidate(p);
-    this.recordUndo('Link Prefab');
+    this.recordUndo('Create Prefab');
+    // prefabs don't nest: instances inside become plain objects
+    for (const d of go.selfAndDescendants()) if (d.prefab || d._prefabId !== null) unpackInstance(d);
+    const data: PrefabJson = { format: 1, gameObject: serializeGameObject(go, { flatten: true }) };
+    await this.write(p, data);
+    Assets.prefabRef(p).data = data;
     go.prefab = p;
-    this.changed();
+    linkInstance(go, data);
+    this.changed(true);
     await this.refreshFiles();
     Debug.log(`Prefab ${p} created`);
     return p;
+  }
+
+  // ---- prefab mode / instances ------------------------------------------------------------------------------------------
+  /** Editing a prefab file in isolation (RE / Unity prefab mode); `back` = the scene to return to. */
+  prefabMode: { path: string; back: { json: SceneJson; path: string | null; name: string; dirty: boolean; selection: number[]; undo: UndoEntry[]; redo: UndoEntry[] } | null } | null = null;
+
+  /** Opens a prefab for editing (Save writes the file; Back returns to the scene, whose instances pick up the change). */
+  async openPrefab(path: string): Promise<void> {
+    if (this.mode !== 'edit') this.stop();
+    if (this.prefabMode && !(await this.closePrefab())) return;
+    const pf = await Assets.loadPrefab(path);
+    if (!pf?.data) return;
+    const back = { json: serializeScene(this.scene), path: this.scene.path, name: this.scene.name, dirty: this.dirty, selection: [...this.selection], undo: this.undoStack, redo: this.redoStack };
+    const name = path.slice(path.lastIndexOf('/') + 1).replace(/\.pfb\.json$/, '');
+    const s = new Scene(name);
+    const ctx = newReadContext(true, s);
+    const root = deserializeGameObject({ ...pf.data.gameObject, prefab: undefined, overrides: undefined }, ctx);
+    resolveReferences(ctx);
+    s.root.add(root);
+    s.path = path;
+    this.prefabMode = { path, back };
+    this.setScene(s, true);
+    this.setDirty(false);
+    this.select([root.id]);
+    this.emit('mode');
+  }
+
+  /** Writes the prefab being edited (its first root object). */
+  async savePrefab(): Promise<void> {
+    const pm = this.prefabMode;
+    if (!pm) return;
+    const roots = this.scene.allGameObjects().filter((g) => !g.parent);
+    if (!roots.length) return Debug.warn('A prefab needs one root object');
+    if (roots.length > 1) Debug.warn(`Only '${roots[0].name}' is saved: a prefab has one root object`);
+    const data: PrefabJson = { format: 1, gameObject: serializeGameObject(roots[0], { flatten: true }) };
+    await this.write(pm.path, data);
+    Assets.prefabRef(pm.path).data = data;
+    this.setDirty(false);
+    Debug.log(`Saved ${pm.path}`);
+  }
+
+  /** Leaves prefab mode (asks about unsaved changes); returns false when cancelled. */
+  async closePrefab(): Promise<boolean> {
+    const pm = this.prefabMode;
+    if (!pm) return true;
+    if (this.dirty) {
+      if (confirm(`Save the changes to ${pm.path}?`)) await this.savePrefab();
+      else if (!confirm('Discard the changes to the prefab?')) return false;
+    }
+    this.prefabMode = null;
+    const b = pm.back;
+    if (b) {
+      const s = deserializeScene(b.json, b.name);
+      s.path = b.path;
+      this.setScene(s, true);
+      this.undoStack = b.undo;
+      this.redoStack = b.redo;
+      this.selection = b.selection.filter((id) => !!s.findById(id));
+      this.setDirty(b.dirty);
+    } else this.newScene(true);
+    this.emit('mode', 'selection', 'inspector');
+    return true;
+  }
+
+  /** The instance root an object belongs to (itself, or the nearest ancestor that is an instance root), or null. */
+  prefabRootOf(go: GameObject): GameObject | null {
+    for (let g: GameObject | null = go; g; g = g.parent) {
+      if (g.prefab) return g;
+      if (g._prefabId === null) return null;
+    }
+    return null;
+  }
+
+  /** Whether an instance differs from its prefab. */
+  hasOverrides(go: GameObject): boolean {
+    const j = serializeGameObject(go);
+    const o = j.overrides;
+    return !!o && !!(o.objects || o.addedComps || o.removedComps || o.added || o.removed);
+  }
+
+  /** Writes an instance (with its overrides) into its prefab: every instance gets the change. */
+  async applyPrefab(go: GameObject): Promise<void> {
+    const path = go.prefab;
+    const pf = path ? Assets.getPrefab(path) : null;
+    if (!path || !pf?.data) return;
+    this.recordUndo('Apply Prefab');
+    const sceneJson = serializeScene(this.scene);
+    // the instance in the prefab's id space: its own objects keep their prefab ids, added ones get new ones
+    let maxPid = 0;
+    const visit = (n: GameObjectJson) => ((maxPid = Math.max(maxPid, n.id)), n.children.forEach(visit));
+    visit(canonicalPrefab(pf.data));
+    const pidOf = new Map<number, number>();
+    const assign = (g: GameObject, owned: boolean) => {
+      const mine = owned && g._prefabId !== null && (g === go || !g.prefab);
+      pidOf.set(g.id, mine ? g._prefabId! : ++maxPid);
+      for (const c of g.children) if (!c.destroyed) assign(c, mine);
+    };
+    assign(go, true);
+    const tree = serializeGameObject(go, { flatten: true });
+    const remap = (n: GameObjectJson) => {
+      n.id = pidOf.get(n.id)!;
+      for (const c of n.components) {
+        const t = Types.get(c.type);
+        if (t) for (const f of getFields(t.ctor)) if (f.type === 'gameobject' && typeof c.fields[f.name] === 'number') c.fields[f.name] = pidOf.get(c.fields[f.name] as number) ?? null;
+      }
+      n.children.forEach(remap);
+    };
+    remap(tree);
+    const data: PrefabJson = { format: 1, gameObject: tree };
+    await this.write(path, data);
+    // this instance becomes a clean instance of the new data (same scene ids)
+    const node = findObjectJson(sceneJson, go.id);
+    if (node) {
+      const ids: Record<string, number> = {};
+      for (const [sid, pid] of pidOf) ids[pid] = sid;
+      Object.assign(node, { components: [], children: [], prefab: path, overrides: { ids } });
+    }
+    Assets.prefabRef(path).data = data;
+    this.rebuildScene(sceneJson);
+    this.setDirty(true);
+    Debug.log(`Applied ${go.name} to ${path}`);
+  }
+
+  /** Drops an instance's overrides (keeps its root name / position). */
+  revertPrefab(go: GameObject): void {
+    if (!go.prefab) return;
+    this.recordUndo('Revert Prefab');
+    const sceneJson = serializeScene(this.scene);
+    const node = findObjectJson(sceneJson, go.id);
+    if (node?.overrides) node.overrides = { ids: node.overrides.ids };
+    this.rebuildScene(sceneJson);
+    this.setDirty(true);
+  }
+
+  /** Makes an instance a plain object tree. */
+  unpackPrefab(go: GameObject): void {
+    if (!go.prefab) return;
+    this.recordUndo('Unpack Prefab');
+    unpackInstance(go);
+    this.changed(true);
+  }
+
+  /** A prefab file changed on disk: instances in the open scene take the new data and keep their overrides. */
+  private async prefabFileChanged(path: string): Promise<void> {
+    if (this.prefabMode?.path === path) return Debug.warn(`${path} changed on disk while you edit it`);
+    const used = this.scene.allGameObjects().some((g) => g.prefab === path);
+    if (!used || this.mode !== 'edit') {
+      await Assets.reloadPrefab(path); // play: Stop rebuilds the scene from its (compact) snapshot with the new data
+      return;
+    }
+    const json = serializeScene(this.scene); // compared with the old data
+    await Assets.reloadPrefab(path);
+    this.rebuildScene(json);
+    Debug.log(`${path} changed: instances updated`);
+  }
+
+  /** Rebuilds the open scene from JSON (same path / selection; undo history kept). */
+  private rebuildScene(json: SceneJson): void {
+    const s = deserializeScene(json, this.scene.name);
+    s.path = this.scene.path;
+    this.setScene(s, false);
   }
 
   async instantiatePrefab(path: string, where: Folder | GameObject | null = null, position?: Vector3): Promise<GameObject | null> {
@@ -748,6 +936,15 @@ export class ${finalName} extends Behavior {
     await this.refreshFiles();
   }
 
+  /** Project Settings: applies the engine state (Physics / Input edited in the window) and writes rs.project.json. */
+  async saveProjectSettings(patch: Partial<ProjectSettingsJson> = {}): Promise<void> {
+    const next = ProjectSettings.capture({ ...this.projectSettings, ...patch });
+    this.projectSettings = next;
+    if (next.startScene) this.startScene = next.startScene;
+    await this.write('rs.project.json', next);
+    this.emit('inspector');
+  }
+
   async buildGame(): Promise<void> {
     Debug.log('Building…');
     try {
@@ -774,6 +971,28 @@ export class ${finalName} extends Behavior {
 export function isAncestor(a: GameObject, b: GameObject): boolean {
   for (let p = b.parent; p; p = p.parent) if (p === a) return true;
   return false;
+}
+
+/** The JSON of an object (by id) inside scene JSON, also inside prefab instances' added children. */
+export function findObjectJson(scene: SceneJson, id: number): GameObjectJson | null {
+  const inObjects = (list: GameObjectJson[]): GameObjectJson | null => {
+    for (const g of list) {
+      if (g.id === id) return g;
+      const r = inObjects(g.children ?? []) ?? inObjects(Object.values(g.overrides?.added ?? {}).flat());
+      if (r) return r;
+    }
+    return null;
+  };
+  const inFolder = (f: SceneJson['root']): GameObjectJson | null => {
+    const r = inObjects(f.gameObjects ?? []);
+    if (r) return r;
+    for (const sub of f.folders ?? []) {
+      const x = inFolder(sub);
+      if (x) return x;
+    }
+    return null;
+  };
+  return inFolder(scene.root);
 }
 
 export const editor = new Editor();

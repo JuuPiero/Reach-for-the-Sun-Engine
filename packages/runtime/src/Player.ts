@@ -72,8 +72,10 @@ export class Player {
     this.pending = null;
     try {
       const next = await loadScene(p.path);
+      const keep = this.scene?._takePersistent() ?? [];
       this.scene?.end();
       this.setScene(next);
+      SceneManager._carry(keep, next);
       p.resolve(next);
     } catch (e) {
       Debug.error(`SceneManager.load(${p.path}): ${(e as Error).message}`);

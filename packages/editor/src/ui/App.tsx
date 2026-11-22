@@ -8,11 +8,13 @@ import { Icons } from './icons';
 import { Inspector } from './Inspector';
 import { ContextMenuHost, MenuBar, type MenuItem } from './Menu';
 import { RuntimeView, setGizmo } from './RuntimeView';
+import { ProjectSettingsWindow } from './ProjectSettings';
 
 const LAYOUT_KEY = 'rs.layout';
 
 export function App() {
   useEditor('mode', 'dirty', 'scene', 'selection');
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [layout, setLayout] = useState(() => {
     try {
       return { left: 280, right: 380, bottom: 300, ...(JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? '{}') as object) };
@@ -72,6 +74,8 @@ export function App() {
         { separator: true },
         { label: 'Duplicate', shortcut: 'Ctrl+D', action: () => editor.duplicateSelection(), disabled: !editor.selection.length },
         { label: 'Delete', shortcut: 'Del', action: () => editor.deleteSelection(), disabled: !editor.selection.length && !editor.selectedFolder },
+        { separator: true },
+        { label: 'Project Settings…', action: () => setSettingsOpen(true) },
       ],
     },
     { label: 'GameObject', items: () => createItems(() => null) },
@@ -105,6 +109,22 @@ export function App() {
         <Splitter axis="x" style={{ gridColumn: 2, gridRow: '1 / span 3' }} onDrag={(d) => setLayout((l) => ({ ...l, left: Math.max(160, Math.min(600, l.left + d)) }))} />
         <div className="rs-center" style={{ gridColumn: 3, gridRow: 1 }}>
           <MacroShelf />
+          {editor.prefabMode ? (
+            <div className="rs-prefab-mode">
+              <Icons.Prefab size={14} />
+              <span>
+                Prefab Mode: <b>{editor.prefabMode.path}</b>
+                {editor.dirty ? ' *' : ''}
+              </span>
+              <span className="rs-grow" />
+              <button className="rs-btn small" onClick={() => void editor.savePrefab()}>
+                Save Prefab
+              </button>
+              <button className="rs-btn small" onClick={() => void editor.closePrefab()}>
+                ◀ Back to {editor.prefabMode.back?.name ?? 'scene'}
+              </button>
+            </div>
+          ) : null}
           <PanelFrame title="Runtime" grow>
             <RuntimeView />
           </PanelFrame>
@@ -127,6 +147,7 @@ export function App() {
         </div>
       </div>
       <ContextMenuHost />
+      {settingsOpen ? <ProjectSettingsWindow onClose={() => setSettingsOpen(false)} /> : null}
     </div>
   );
 }

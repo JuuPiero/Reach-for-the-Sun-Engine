@@ -27,6 +27,44 @@ interface PadState {
 }
 const pads: PadState[] = [0, 1, 2, 3].map(() => ({ held: new Set(), down: new Set(), up: new Set(), axes: [0, 0, 0, 0], triggers: [0, 0], connected: false }));
 
+/** A finger on the game view (CSS pixels from the top-left). */
+export interface Touch {
+  id: number;
+  x: number;
+  y: number;
+  /** Began this frame / moving or resting / ended this frame. */
+  phase: 'began' | 'moved' | 'ended';
+}
+const touches = new Map<number, Touch>();
+
+/**
+ * Named input action (Project Settings ▸ Input): a button (any of its keys / gamepad buttons / mouse buttons) or an axis
+ * (negative / positive keys + a gamepad axis).
+ */
+export interface InputAction {
+  name: string;
+  /** Button sources. */
+  keys?: string[];
+  buttons?: GamepadButton[];
+  mouse?: number[];
+  /** Axis sources (value -1..1). */
+  negative?: string[];
+  positive?: string[];
+  gamepadAxis?: GamepadAxis;
+  /** Flip the gamepad axis (sticks report down as positive: Vertical uses it). */
+  invert?: boolean;
+}
+export const DEFAULT_INPUT_ACTIONS: InputAction[] = [
+  { name: 'Horizontal', negative: ['KeyA', 'ArrowLeft'], positive: ['KeyD', 'ArrowRight'], gamepadAxis: 'LeftX' },
+  { name: 'Vertical', negative: ['KeyS', 'ArrowDown'], positive: ['KeyW', 'ArrowUp'], gamepadAxis: 'LeftY', invert: true },
+  { name: 'Jump', keys: ['Space'], buttons: ['A'] },
+  { name: 'Fire', keys: [], buttons: ['RT', 'X'], mouse: [0] },
+  { name: 'Submit', keys: ['Enter'], buttons: ['A'] },
+  { name: 'Cancel', keys: ['Escape'], buttons: ['B'] },
+];
+const actions = new Map<string, InputAction>(DEFAULT_INPUT_ACTIONS.map((a) => [a.name, a]));
+const anyOf = (codes: readonly string[] | undefined, set: Set<string>) => !!codes?.some((c) => set.has(c));
+
 export const Input = {
   /** Mouse position in the game view, CSS pixels from the top-left. */
   mouseX: 0,
@@ -83,6 +121,59 @@ export const Input = {
       Input.wheel += Math.sign(e.deltaY);
     };
     const blur = () => held.clear();
+    // touches; the first finger also acts as mouse button 0 (games written for the mouse work on phones)
+    let primary: number | null = null;
+    const pos = (t: { clientX: number; clientY: number }) => {
+      const r = element.getBoundingClientRect();
+      return { x: t.clientX - r.left, y: t.clientY - r.top };
+    };
+    const ts = (e: TouchEvent) => {
+      e.preventDefault();
+      AudioEngine.resume();
+      for (const t of Array.from(e.changedTouches)) {
+        const p = pos(t);
+        touches.set(t.identifier, { id: t.identifier, x: p.x, y: p.y, phase: 'began' });
+        if (primary === null) {
+          primary = t.identifier;
+          Input.mouseX = p.x;
+          Input.mouseY = p.y;
+          mouseHeld.add(0);
+          mouseDown.add(0);
+        }
+      }
+    };
+    const tm = (e: TouchEvent) => {
+      e.preventDefault();
+      for (const t of Array.from(e.changedTouches)) {
+        const cur = touches.get(t.identifier);
+        if (!cur) continue;
+        const p = pos(t);
+        if (t.identifier === primary) {
+          Input.mouseDeltaX += p.x - cur.x;
+          Input.mouseDeltaY += p.y - cur.y;
+          Input.mouseX = p.x;
+          Input.mouseY = p.y;
+        }
+        cur.x = p.x;
+        cur.y = p.y;
+        if (cur.phase !== 'began') cur.phase = 'moved';
+      }
+    };
+    const te = (e: TouchEvent) => {
+      for (const t of Array.from(e.changedTouches)) {
+        const cur = touches.get(t.identifier);
+        if (cur) cur.phase = 'ended';
+        if (t.identifier === primary) {
+          primary = null;
+          mouseHeld.delete(0);
+          mouseUp.add(0);
+        }
+      }
+    };
+    element.addEventListener('touchstart', ts, { passive: false });
+    element.addEventListener('touchmove', tm, { passive: false });
+    element.addEventListener('touchend', te);
+    element.addEventListener('touchcancel', te);
     window.addEventListener('keydown', kd);
     window.addEventListener('keyup', ku);
     element.addEventListener('mousedown', md);
@@ -98,6 +189,10 @@ export const Input = {
       window.removeEventListener('mousemove', mm);
       element.removeEventListener('wheel', wh);
       window.removeEventListener('blur', blur);
+      element.removeEventListener('touchstart', ts);
+      element.removeEventListener('touchmove', tm);
+      element.removeEventListener('touchend', te);
+      element.removeEventListener('touchcancel', te);
       detach = null;
     };
   },
@@ -112,8 +207,60 @@ export const Input = {
     mouseHeld.clear();
     mouseDown.clear();
     mouseUp.clear();
+    touches.clear();
     Input.mouseDeltaX = Input.mouseDeltaY = Input.wheel = 0;
   },
+
+  // ---- touch ------------------------------------------------------------------------------------------------------------------
+  /** Fingers on the game view this frame (ended ones are listed for the frame they lift). */
+  get touches(): Touch[] {
+    return [...touches.values()];
+  },
+  get touchCount(): number {
+    let n = 0;
+    for (const t of touches.values()) if (t.phase !== 'ended') n++;
+    return n;
+  },
+
+  // ---- actions ----------------------------------------------------------------------------------------------------------------
+  /** Replaces the action table (Project Settings ▸ Input). */
+  setActions(list: InputAction[]): void {
+    actions.clear();
+    for (const a of list) if (a.name) actions.set(a.name, a);
+  },
+  get actions(): InputAction[] {
+    return [...actions.values()];
+  },
+  /** An action's button is held (any key / gamepad button / mouse button), or its axis is pushed. */
+  getAction(name: string, pad = 0): boolean {
+    const a = actions.get(name);
+    if (!a) return false;
+    return anyOf(a.keys, held) || !!a.buttons?.some((b) => Input.getButton(b, pad)) || !!a.mouse?.some((b) => mouseHeld.has(b)) || (!!(a.negative || a.positive || a.gamepadAxis) && Input.getActionValue(name, pad) !== 0);
+  },
+  getActionDown(name: string, pad = 0): boolean {
+    const a = actions.get(name);
+    return !!a && (anyOf(a.keys, down) || !!a.buttons?.some((b) => Input.getButtonDown(b, pad)) || !!a.mouse?.some((b) => mouseDown.has(b)) || anyOf(a.positive, down) || anyOf(a.negative, down));
+  },
+  getActionUp(name: string, pad = 0): boolean {
+    const a = actions.get(name);
+    return !!a && (anyOf(a.keys, up) || !!a.buttons?.some((b) => Input.getButtonUp(b, pad)) || !!a.mouse?.some((b) => mouseUp.has(b)) || anyOf(a.positive, up) || anyOf(a.negative, up));
+  },
+  /** -1..1 for axis actions (keys win over the stick), 0 / 1 for buttons. */
+  getActionValue(name: string, pad = 0): number {
+    const a = actions.get(name);
+    if (!a) return 0;
+    if (a.negative || a.positive || a.gamepadAxis) {
+      const k = (anyOf(a.positive, held) ? 1 : 0) - (anyOf(a.negative, held) ? 1 : 0);
+      if (k !== 0) return k;
+      if (a.gamepadAxis) {
+        const v = Input.getAxis(a.gamepadAxis, pad);
+        return v === 0 ? 0 : a.invert ? -v : v;
+      }
+      return 0;
+    }
+    return anyOf(a.keys, held) || !!a.buttons?.some((b) => Input.getButton(b, pad)) || !!a.mouse?.some((b) => mouseHeld.has(b)) ? 1 : 0;
+  },
+
   // ---- gamepads (standard mapping, polled once per play frame) -----------------------------------------------------------
   /** A gamepad button is held (`'A'`, `'LB'`, `'Start'`, `'Up'`… see GAMEPAD_BUTTONS). */
   getButton: (b: GamepadButton, pad = 0) => pads[pad]?.held.has(b) ?? false,
@@ -178,5 +325,9 @@ export const Input = {
     mouseDown.clear();
     mouseUp.clear();
     Input.mouseDeltaX = Input.mouseDeltaY = Input.wheel = 0;
+    for (const [id, t] of touches) {
+      if (t.phase === 'ended') touches.delete(id);
+      else t.phase = 'moved';
+    }
   },
 };

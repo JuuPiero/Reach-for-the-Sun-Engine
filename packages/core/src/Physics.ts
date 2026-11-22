@@ -29,7 +29,13 @@ export interface QueryOptions {
   ignore?: GameObject | null;
   /** Hit trigger colliders too. */
   triggers?: boolean;
+  /** Layers hit (bits, `Physics.layerMask('Ground', 'Enemy')`); default every layer but "Ignore Raycast". */
+  layerMask?: number;
 }
+
+export const LAYER_COUNT = 16;
+/** Layer 1: skipped by queries unless their mask names it. */
+export const IGNORE_RAYCAST_LAYER = 1;
 
 export interface PhysicsProvider {
   readonly name: string;
@@ -68,6 +74,44 @@ export const Physics = {
   fixedDeltaTime: 1 / 60,
   /** At most this many steps per frame (slow frames slow the simulation down instead of spiralling). */
   maxSubSteps: 4,
+  /** Layer names (Project Settings ▸ Physics); '' = unused. Objects pick one with `gameObject.layer`. */
+  layers: ['Default', 'Ignore Raycast', ...new Array<string>(LAYER_COUNT - 2).fill('')] as string[],
+  /** Per layer: bit mask of the layers it collides with (symmetric). */
+  collisionMatrix: new Array<number>(LAYER_COUNT).fill(0xffff) as number[],
+  /** Bumped when layers / the matrix change (providers refresh collision groups). */
+  layersVersion: 0,
+  /** Index of a layer name (-1 if unknown). */
+  layerIndex(name: string): number {
+    return Physics.layers.indexOf(name);
+  },
+  /** Bit mask of layers by name or index. */
+  layerMask(...layers: (string | number)[]): number {
+    let m = 0;
+    for (const l of layers) {
+      const i = typeof l === 'number' ? l : Physics.layerIndex(l);
+      if (i >= 0 && i < LAYER_COUNT) m |= 1 << i;
+    }
+    return m;
+  },
+  getLayerCollision(a: number, b: number): boolean {
+    return ((Physics.collisionMatrix[a] ?? 0xffff) & (1 << b)) !== 0;
+  },
+  /** Whether objects of layers `a` and `b` collide (and trigger). */
+  setLayerCollision(a: number, b: number, collide: boolean): void {
+    const m = Physics.collisionMatrix;
+    if (collide) {
+      m[a] |= 1 << b;
+      m[b] |= 1 << a;
+    } else {
+      m[a] &= ~(1 << b);
+      m[b] &= ~(1 << a);
+    }
+    Physics.layersVersion++;
+  },
+  /** Default query mask: everything but Ignore Raycast. */
+  get defaultQueryMask(): number {
+    return 0xffff & ~(1 << IGNORE_RAYCAST_LAYER);
+  },
   get provider(): PhysicsProvider | null {
     return provider;
   },

@@ -14,7 +14,7 @@ node scripts/rs.mjs build examples/Demo      # build game web → examples/Demo/
 node scripts/rs.mjs create D:\Games\MyGame   # tạo project mới (chép từ examples/Demo)
 ```
 
-Project gồm `rs.project.json` (`name`, `startScene`) và thư mục `Assets/` (scene, script, prefab, UserData, model `.glb`,
+Project gồm `rs.project.json` (`name`, `startScene`, cài đặt Physics / Input — sửa bằng Edit ▸ Project Settings) và thư mục `Assets/` (scene, script, prefab, UserData, model `.glb`,
 texture `.png/.jpg`). Mọi tham chiếu tới asset đều là **đường dẫn trong project** (`Assets/UserData/PlayerParam.user.json`).
 
 ## Khái niệm
@@ -49,8 +49,8 @@ export class Player extends Behavior {
 - **UserData**: class export kế thừa `UserData` (ví dụ `PlayerParam` với `moveSpeed`, `jumpHeight`); tạo file trong AssetBrowser
   (Create ▸ UserData ▸ PlayerParam), chỉnh trong Inspector (tự lưu), gán vào field của component. Mọi component dùng chung
   một bản của mỗi file.
-- **Prefab**: kéo một GameObject từ Hierarchies vào AssetBrowser để tạo `.pfb.json`; kéo prefab vào Hierarchies / Runtime
-  view để đặt; trong script gọi `prefab.instantiate(vịTrí, folder)`.
+- **Prefab**: kéo một GameObject từ Hierarchies vào AssetBrowser để tạo `.pfb.json` (object đó thành instance của prefab);
+  kéo prefab vào Hierarchies / Runtime view để đặt; trong script gọi `prefab.instantiate(vịTrí, folder)`. Xem mục Prefab bên dưới.
 - API khác: `Application.deltaTime / time / timeScale`, `Input.getKey / getKeyDown / axis / mouseX…`, `Debug.log / warn / error`
   (hiện ở Console), `this.scene.find('Tên')`, `findWithTag`, `findComponents`, `gameObject.destroy()`.
 
@@ -65,7 +65,11 @@ export class Player extends Behavior {
   leo dốc quá Slope Limit, bám đất; `isGrounded`, `velocity`.
 - Callback trên Behavior: `onCollisionEnter / onCollisionExit(collision)` (object kia, điểm, pháp tuyến),
   `onTriggerEnter / onTriggerExit(object)`, `fixedUpdate()` (mỗi bước vật lý, 60 lần / giây).
-- Truy vấn: `Physics.raycast(gốc, hướng, khoảngCách, { ignore, triggers })`, `Physics.overlapSphere(tâm, bánKính)`, `Physics.gravity`.
+- Truy vấn: `Physics.raycast(gốc, hướng, khoảngCách, { ignore, triggers, layerMask })`, `Physics.overlapSphere(tâm, bánKính, {…})`,
+  `Physics.gravity`.
+- **Layer**: mỗi GameObject có một layer (ô chọn cạnh Tag trong Inspector, 16 layer; đặt tên trong Project Settings ▸ Physics).
+  Ma trận va chạm quyết định layer nào va chạm / kích trigger với layer nào; truy vấn lọc bằng
+  `layerMask: Physics.layerMask('Ground', 'Enemy')` (mặc định bỏ qua layer "Ignore Raycast").
 - Bản build chỉ kèm Rapier khi project dùng vật lý (scene / prefab / script nhắc tới Collider, RigidBody, CharacterController
   hoặc Physics). Runtime view vẽ khung dây collider của object đang chọn (xanh lá = vật cản, vàng = trigger); nút **Colliders**
   để hiện tất cả.
@@ -153,6 +157,11 @@ cao 720 px (tự co giãn theo khung):
 - Khoá chuột (game góc nhìn thứ nhất): `Input.lockCursor(true)` hoặc `Input.lockOnClick = true`; `Input.cursorLocked`.
 - Camera: `Camera.main`, `camera.screenPointToRay(Input.mouseX, Input.mouseY)` (kết hợp `Physics.raycast` để click chọn vật),
   `camera.worldToScreenPoint(p)` (đặt UI theo vị trí 3D).
+- **Input actions** (Project Settings ▸ Input): đặt tên cho hành động, gán nhiều phím / nút tay cầm / nút chuột (Button) hoặc
+  phím âm / dương + trục tay cầm (Axis). Mặc định có Horizontal, Vertical, Jump, Fire, Submit, Cancel. Script:
+  `Input.getAction('Jump')`, `getActionDown`, `getActionUp`, `Input.getActionValue('Horizontal')` (-1..1).
+- **Cảm ứng**: `Input.touches` (id, x, y, phase began / moved / ended), `Input.touchCount`; ngón đầu tiên cũng là chuột trái
+  (`getMouseButton(0)`, `mouseX / mouseY`) nên game viết cho chuột chạy được trên điện thoại.
 
 ## Material
 
@@ -192,8 +201,29 @@ nút Resume / Title Screen, nhạc nền + tiếng nhảy / nhặt coin, bầu t
 coin lấp lánh + hiệu ứng nổ hạt khi nhặt, tia debug hướng chạy trong editor) và scene **Title** (camera xoay, nút Start / phím
 Enter). Âm thanh / texture do `scripts/gen-demo-sounds.mjs` / `scripts/gen-demo-textures.mjs` tạo ra.
 
-## Giới hạn hiện tại (mốc 4)
+## Prefab
 
-Chưa có nhiều scene cùng lúc (additive), skinned mesh / root motion, layer va chạm; prefab chưa có override (đặt prefab = bản sao
-có ghi nguồn). Material dùng ánh sáng Blinn-Phong (Metallic / Roughness được quy đổi, chưa có phản chiếu môi trường). Game dùng vật
-lý nặng thêm ~3,5 MB (Rapier bản nhúng WASM).
+- Instance trong scene **liên kết** với file prefab: scene chỉ lưu phần khác biệt (override). Sửa prefab là mọi instance đổi theo,
+  phần đã override vẫn giữ nguyên. Hierarchies tô xanh dương các object thuộc prefab.
+- **Prefab Mode**: double-click file prefab (hoặc Open trong Inspector) để sửa riêng prefab; **Save Prefab** (Ctrl+S) ghi file,
+  **◀ Back** quay về scene (các instance đã cập nhật). File prefab bị sửa từ bên ngoài cũng tự cập nhật instance.
+- Inspector của instance: thanh Prefab với **Open**, **Select**, **Apply** (ghi thay đổi của instance này vào prefab), **Revert**
+  (bỏ override), **Unpack** (thành object thường); nhãn "overrides" khi instance khác prefab.
+- Override gồm: field của component, tên / tag / layer / Update / Draw / Transform của object con, component thêm / bớt, object
+  con thêm / xoá. Prefab không lồng nhau: prefab tạo từ object chứa instance khác sẽ gộp instance đó thành object thường.
+
+## Project Settings
+
+Edit ▸ **Project Settings…**: General (scene khởi động của game), Physics (trọng lực, bước vật lý, tên 16 layer, ma trận va
+chạm), Input (actions). Thay đổi áp dụng ngay trong editor; **Save** ghi vào `rs.project.json` (game build đọc cùng file).
+
+## Giữ object khi đổi scene
+
+`SceneManager.dontDestroyOnLoad(gameObject)`: object (gốc của nó, cùng các con) chuyển sang scene mới khi `SceneManager.load`,
+giữ nguyên trạng thái (không gọi onDestroy / start lại) — ví dụ trình phát nhạc, dữ liệu phiên chơi. Timer / tween của nó trên
+scene cũ bị huỷ.
+
+## Giới hạn hiện tại (mốc 5)
+
+Chưa có nhiều scene cùng lúc (additive), skinned mesh / root motion, prefab lồng nhau. Material dùng ánh sáng Blinn-Phong
+(Metallic / Roughness được quy đổi, chưa có phản chiếu môi trường). Game dùng vật lý nặng thêm ~3,5 MB (Rapier bản nhúng WASM).

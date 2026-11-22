@@ -85,6 +85,20 @@ export const Assets = {
   getPrefab(path: string): Prefab | null {
     return prefabs.get(path) ?? null;
   },
+  /** Reads a prefab file again and swaps its data in one step (instances never see it unloaded). */
+  async reloadPrefab(path: string): Promise<Prefab | null> {
+    json.delete(path);
+    try {
+      const j = await Assets.loadJson<PrefabJson>(path);
+      await Assets.preloadReferences(j);
+      const p = Assets.prefabRef(path);
+      p.data = j;
+      return p;
+    } catch (e) {
+      Debug.error(`Prefab ${path}: ${(e as Error).message}`);
+      return null;
+    }
+  },
   /** The shared Prefab object of a path (not loaded yet = `loaded` false; filled by loadPrefab). */
   prefabRef(path: string): Prefab {
     let p = prefabs.get(path);

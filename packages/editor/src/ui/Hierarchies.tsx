@@ -190,10 +190,11 @@ export function Hierarchies() {
           const off = r.kind === 'object' ? !r.go.activeInHierarchy : !r.folder.activeInHierarchy;
           const Icon = r.kind === 'folder' ? (collapsed.has(r.key) ? Icons.Folder : Icons.FolderOpen) : objectIcon(r.go.components.map((c) => Types.nameOf(c.constructor)));
           const dz = drop?.key === r.key ? ` drop-${drop.zone}` : '';
+          const pf = r.kind === 'object' ? (r.go.prefab ? ' prefab-root' : editor.prefabRootOf(r.go) ? ' prefab-part' : '') : '';
           return (
             <div
               key={r.key}
-              className={`rs-row ${r.kind}${selected ? ' selected' : ''}${off ? ' off' : ''}${dz}`}
+              className={`rs-row ${r.kind}${selected ? ' selected' : ''}${off ? ' off' : ''}${dz}${pf}`}
               draggable={renaming !== r.key}
               onDragStart={(e) => onDragStart(r, e)}
               onDragOver={(e) => onDragOver(r, e)}

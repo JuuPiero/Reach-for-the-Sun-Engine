@@ -2,7 +2,7 @@ import { Application, AudioSource, Behavior, Color3, ParticleSystem, CharacterCo
 import type { PlayerParam } from './PlayerParam';
 
 /**
- * Third-person movement: WASD / arrows walk (Shift = run), Space jumps. Moves with the CharacterController, turns towards the
+ * Third-person movement: WASD / arrows / left stick walk (Shift or gamepad B = run), Space / A jumps. Moves with the CharacterController, turns towards the
  * movement, drives the body's Motion FSM (speed / grounded / jump) and collects coins (trigger colliders tagged "Coin").
  */
 const DIR_COLOR = new Color3(1, 0.6, 0.1);
@@ -34,15 +34,16 @@ export class PlayerController extends Behavior {
 
   update(): void {
     const dt = Application.deltaTime;
-    const run = Input.getKey('ShiftLeft') || Input.getKey('ShiftRight');
+    const run = Input.getKey('ShiftLeft') || Input.getKey('ShiftRight') || Input.getButton('B');
     const speed = (this.param?.moveSpeed ?? 5) * (run ? this.runMultiplier : 1);
-    const x = Input.axis('KeyA', 'KeyD') + Input.axis('ArrowLeft', 'ArrowRight');
-    const z = Input.axis('KeyS', 'KeyW') + Input.axis('ArrowDown', 'ArrowUp');
+    // input actions (Project Settings ▸ Input): keyboard, arrows and the gamepad stick
+    const x = Input.getActionValue('Horizontal');
+    const z = Input.getActionValue('Vertical');
     const move = new Vector3(x, 0, z);
     if (move.lengthSquared() > 1) move.normalize();
     const grounded = this._cc?.isGrounded ?? true;
     if (grounded) this._vy = Math.max(this._vy, -1);
-    if (grounded && Input.getKeyDown('Space')) {
+    if (grounded && Input.getActionDown('Jump')) {
       this._vy = Math.sqrt(2 * 9.81 * (this.param?.jumpHeight ?? 1.5));
       this._motion?.setTrigger('jump');
       if (this.jumpSound) this._audio?.playOneShot(this.jumpSound, 0.5);

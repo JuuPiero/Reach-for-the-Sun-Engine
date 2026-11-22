@@ -127,3 +127,32 @@ parameters / states (renames follow into transitions / initial) / transitions / 
   frames and expired timed ones, `_clearLines` on `Scene.end`); `debugLines.ts` draws them as one LineSystem (updated in place
   while the count is unchanged). `SyncOptions.debugLines` (editor true) / `Debug.showLines` (builds, default false).
 - `SyncOptions.playing / timeScale / dt`: the editor passes play state (pause → timeScale 0, edit → playing false).
+
+## 9. Prefab instances, layers, project settings (milestone 5)
+- **Prefab instances** (serialization.ts): every object of an instance carries `_prefabId` (the id of its object in the prefab
+  file, "pid"); the root has `prefab`. Saving an instance root writes it **compactly**: `{ id, name, prefab, transform, components: [],
+  children: [], overrides: PrefabOverrides }` — `ids` (pid → scene id, keeps references stable), per-pid `objects` mods (name / tag /
+  layer / update / draw / transform of non-root objects; components keyed `Type#n` with changed fields only), `addedComps`,
+  `removedComps`, `added` children (full JSON, may be other instances), `removed` pids. Diff base = `canonicalPrefab(data)`
+  (the prefab read + written once with every field, cached per data object; nested instances flattened; pids = file ids).
+  Loading: `deserializeGameObject` expands compact nodes (`expandInstance`: canonical → scene id space (unknown pids get fresh ids)
+  → internal refs remapped → mods applied). A prefab not loaded keeps the compact JSON in `_prefabCompact` and writes it back.
+  Full-tree instances (older files, freshly created prefabs) are linked by structure (`linkInstance`). `instanceJson` = new
+  instance (pids set) for `Prefab.instantiate`. Objects added to an instance have `_prefabId` null; another instance's root inside
+  one is "added" (`ownedBy` = pid set and not a root).
+- Editor: `openPrefab` (prefab mode: the prefab's root in its own Scene with file ids, `back` = scene JSON + undo stacks),
+  `savePrefab` (flatten write + `Assets.prefabRef(path).data = data`), `closePrefab` (rebuild the scene JSON → expands with the new
+  data), `applyPrefab` (instance → prefab ids: own objects keep pids, added get max+1; the instance node in the scene JSON is
+  replaced by a clean `{ overrides: { ids } }`), `revertPrefab` (keep only `ids`), `unpackPrefab`, `prefabFileChanged` (external
+  edit: serialize scene with the old data, `Assets.reloadPrefab` swaps data atomically, rebuild). Order matters everywhere:
+  **serialize with the old prefab data before swapping it**.
+- **Layers** (Physics.ts): `GameObject.layer` 0–15 (saved as `layer` when ≠ 0), `Physics.layers` names, `collisionMatrix` (per layer
+  mask, symmetric via `setLayerCollision`). Rapier: collision + solver groups `(1 << layer) << 16 | matrix[layer]` (in the collider
+  signature so edits recreate colliders), character moves pass the same groups; queries filter by `layerMask` in the predicate
+  (default all but layer 1 "Ignore Raycast").
+- **ProjectSettings** (core/ProjectSettings.ts): `apply(rs.project.json)` → gravity, fixed step, layers, matrix, Input actions (player
+  main.ts and editor init); `capture(base)` → JSON the editor writes (`saveProjectSettings`). The vite `readProject` keeps every key.
+- **Input**: actions table (`InputAction`: keys / buttons / mouse or negative / positive / gamepadAxis + invert), touches (first finger
+  = mouse button 0), all reset per frame in `_endFrame`.
+- **dontDestroyOnLoad**: root objects flagged `_dontDestroy`; hosts call `old._takePersistent()` (removed without onDestroy) before
+  `old.end()`, then `SceneManager._carry(keep, next)` after `next.begin()` (already awoken / started components are not restarted).

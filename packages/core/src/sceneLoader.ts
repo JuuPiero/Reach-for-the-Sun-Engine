@@ -2,7 +2,7 @@ import { Assets } from './assets';
 import type { GameObject } from './GameObject';
 import { _setPrefabHost, Prefab } from './Prefab';
 import type { Folder, Scene } from './Scene';
-import { deserializeGameObject, deserializeScene, deserializeUserData, newReadContext, resolveReferences, type SceneJson } from './serialization';
+import { deserializeGameObject, deserializeScene, deserializeUserData, instanceJson, newReadContext, resolveReferences, type SceneJson } from './serialization';
 
 // wiring that would otherwise be import cycles
 Assets._setUserDataReader(deserializeUserData);
@@ -10,7 +10,7 @@ _setPrefabHost({
   instantiate(p: Prefab, scene: Scene, where: Folder | GameObject | null): GameObject {
     if (!p.data) throw new Error(`Prefab ${p.path} is not loaded (reference it from a field, or await Assets.loadPrefab)`);
     const ctx = newReadContext(false, scene);
-    const go = deserializeGameObject(p.data.gameObject, ctx);
+    const go = deserializeGameObject(instanceJson(p.data), ctx);
     go.prefab = p.path;
     resolveReferences(ctx);
     scene.add(go, where);

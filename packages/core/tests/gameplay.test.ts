@@ -228,3 +228,97 @@ test('ParticleSystem: play on start, burst, non-looping stops after duration, st
   assert.equal(ps._pendingBurst, 0);
   scene.end();
 });
+
+test('Input actions: defaults, axis keys + inversion, custom table; ProjectSettings apply / capture', () => {
+  const { Input, ProjectSettings, Physics } = core;
+  // simulated key state through a fake element + window events
+  const listeners = new Map<string, ((e: unknown) => void)[]>();
+  const target = {
+    addEventListener: (t: string, f: (e: unknown) => void) => listeners.set(t, [...(listeners.get(t) ?? []), f]),
+    removeEventListener: () => {},
+    getBoundingClientRect: () => ({ left: 0, top: 0 }),
+  };
+  (globalThis as { window?: unknown }).window = target;
+  Input.attach(target as unknown as HTMLElement);
+  const fire = (t: string, e: object) => listeners.get(t)?.forEach((f) => f({ preventDefault() {}, target: null, ...e }));
+  fire('keydown', { code: 'KeyD' });
+  fire('keydown', { code: 'Space' });
+  assert.equal(Input.getActionValue('Horizontal'), 1);
+  assert.equal(Input.getActionValue('Vertical'), 0);
+  assert.ok(Input.getAction('Jump') && Input.getActionDown('Jump'));
+  Input._endFrame();
+  assert.ok(Input.getAction('Jump') && !Input.getActionDown('Jump'));
+  fire('keyup', { code: 'Space' });
+  assert.ok(Input.getActionUp('Jump'));
+  // touch: first finger = mouse button 0
+  fire('touchstart', { changedTouches: [{ identifier: 7, clientX: 10, clientY: 20 }] });
+  assert.equal(Input.touchCount, 1);
+  assert.ok(Input.getMouseButtonDown(0) && Input.mouseX === 10 && Input.mouseY === 20);
+  assert.equal(Input.touches[0].phase, 'began');
+  Input._endFrame();
+  fire('touchmove', { changedTouches: [{ identifier: 7, clientX: 30, clientY: 20 }] });
+  assert.equal(Input.mouseDeltaX, 20);
+  fire('touchend', { changedTouches: [{ identifier: 7, clientX: 30, clientY: 20 }] });
+  assert.ok(Input.getMouseButtonUp(0) && (Input.touchCount as number) === 0);
+  Input._endFrame();
+  assert.equal(Input.touches.length, 0);
+  // project settings
+  ProjectSettings.apply({
+    physics: { gravity: [0, -20, 0], layers: ['x', 'y', 'Player', 'Enemy'], collisions: [0xffff, 0xffff, 0xffff & ~(1 << 3), 0xffff & ~(1 << 2)] },
+    input: { actions: [{ name: 'Dash', keys: ['KeyQ'] }] },
+  });
+  assert.equal(Physics.gravity.y, -20);
+  assert.deepEqual(Physics.layers.slice(0, 4), ['Default', 'Ignore Raycast', 'Player', 'Enemy'], 'layers 0 / 1 keep their names');
+  assert.equal(Physics.getLayerCollision(2, 3), false);
+  assert.deepEqual(Input.actions.map((a) => a.name), ['Dash']);
+  fire('keydown', { code: 'KeyQ' });
+  assert.ok(Input.getAction('Dash'));
+  const cap = ProjectSettings.capture({ name: 'G', startScene: 'a.scn.json' });
+  assert.equal(cap.name, 'G');
+  assert.deepEqual(cap.physics!.gravity, [0, -20, 0]);
+  assert.equal(cap.physics!.collisions![2], 0xffff & ~(1 << 3));
+  ProjectSettings.apply({});
+  assert.equal(Physics.gravity.y, -9.81);
+  assert.ok(Input.actions.some((a) => a.name === 'Horizontal'), 'defaults back');
+  Input.detach();
+});
+
+test('SceneManager.dontDestroyOnLoad: the object moves to the next scene with its state, no onDestroy / second start', () => {
+  const log: string[] = [];
+  class Keeper extends Behavior {
+    n = 0;
+    start(): void {
+      log.push('start');
+    }
+    update(): void {
+      this.n++;
+    }
+    onDestroy(): void {
+      log.push('destroy');
+    }
+  }
+  const a = new Scene('a');
+  const go = new GameObject('Music');
+  const k = go.addComponent(Keeper);
+  const child = new GameObject('Child');
+  child.transform.setParent(go.transform);
+  a.add(go);
+  a.add(new GameObject('Other'));
+  a.begin();
+  a.step(0.016);
+  a.step(0.016);
+  core.SceneManager.dontDestroyOnLoad(child); // marks its root
+  // what a host does on SceneManager.load
+  const b = new Scene('b');
+  const keep = a._takePersistent();
+  a.end();
+  b.begin();
+  core.SceneManager._carry(keep, b);
+  b.step(0.016);
+  assert.deepEqual(log, ['start']);
+  assert.equal(k.n, 3);
+  assert.ok(b.find('Music') === go && b.find('Music/Child') === child);
+  assert.equal(a.find('Music'), null);
+  b.end();
+  assert.deepEqual(log, ['start', 'destroy']);
+});

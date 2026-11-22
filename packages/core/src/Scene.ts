@@ -227,6 +227,17 @@ export class Scene {
     this._toStart.push(...all);
   }
 
+  /** @internal scene switch: takes the objects marked dontDestroyOnLoad out of this scene (no onDestroy), for the next one. */
+  _takePersistent(): GameObject[] {
+    const out = this.allGameObjects().filter((g) => g._dontDestroy && !g.parent && !g._destroyed);
+    for (const g of out) {
+      g._folder?.remove(g);
+      g._scene = null;
+    }
+    if (out.length) this.version++;
+    return out;
+  }
+
   /** Leaves play mode (onDestroy of everything awoken). */
   end(): void {
     if (!this.playing) return;

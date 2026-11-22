@@ -196,6 +196,8 @@ export class GameObject {
   id: number;
   name: string;
   tag = '';
+  /** Physics layer (0–15, names in Physics.layers): collisions follow the layer matrix, queries filter by layer mask. */
+  layer = 0;
   /** Components update (RE's UpdateSelf). */
   updateSelf = true;
   /** Renderers draw (RE's DrawSelf). */
@@ -204,8 +206,14 @@ export class GameObject {
   readonly components: Component[] = [];
   /** @internal set by Scene / Folder. */ _folder: Folder | null = null;
   /** @internal */ _scene: Scene | null = null;
-  /** Prefab file this object was instantiated from (informative). */
+  /** Prefab file this object is an instance of (set on the instance root only). */
   prefab: string | null = null;
+  /** @internal id of the matching object inside the prefab file (every object of an instance; null = added to the instance). */
+  _prefabId: number | null = null;
+  /** @internal kept when the scene changes (SceneManager.dontDestroyOnLoad; root objects). */
+  _dontDestroy = false;
+  /** @internal compact JSON of an instance whose prefab could not be loaded (saved back unchanged). */
+  _prefabCompact: unknown = null;
   /** @internal */ _destroyed = false;
   /** Bumped when the component list changes (renderers cache by it). */
   componentsVersion = 0;
@@ -322,4 +330,8 @@ export class GameObject {
 /** @internal next free GameObject id (deserialization keeps saved ids). */
 export function _reserveIds(maxId: number): void {
   if (maxId >= nextId) nextId = maxId + 1;
+}
+/** @internal a fresh GameObject id. */
+export function _newId(): number {
+  return nextId++;
 }

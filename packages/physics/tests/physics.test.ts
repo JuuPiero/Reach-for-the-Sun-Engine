@@ -143,3 +143,37 @@ test('CharacterController: moving before the first physics step does not fall th
   assert.ok(cc.isGrounded);
   s.end();
 });
+
+test('layers: the collision matrix lets objects pass through each other; queries filter by layer mask', async () => {
+  await initPhysics();
+  const s = new Scene();
+  ground(s);
+  Physics.layers[3] = 'Ghost';
+  Physics.setLayerCollision(0, 3, false); // ghosts ignore the default layer (the ground)
+  const ghost = s.createGameObject('Ghost');
+  ghost.layer = 3;
+  ghost.transform.localPosition.set(3, 2, 0);
+  ghost.addComponent(Collider);
+  ghost.addComponent(RigidBody);
+  const solid = s.createGameObject('Solid');
+  solid.transform.localPosition.set(-3, 2, 0);
+  solid.addComponent(Collider);
+  solid.addComponent(RigidBody);
+  Application._reset();
+  s.begin();
+  run(s, 1.5);
+  assert.ok(solid.transform.position.y > 0.3, 'default layer rests on the ground');
+  assert.ok(ghost.transform.position.y < -2, `ghost falls through (${ghost.transform.position.y})`);
+  // raycasts down at the solid box: default mask hits it, a Ghost-only mask doesn't
+  const down = new Vector3(0, -1, 0);
+  assert.equal(Physics.raycast(new Vector3(-3, 5, 0), down)?.gameObject, solid);
+  assert.equal(Physics.raycast(new Vector3(-3, 5, 0), down, 100, { layerMask: Physics.layerMask('Ghost') }), null);
+  // Ignore Raycast layer is skipped by default
+  solid.layer = 1;
+  run(s, 0.1);
+  assert.equal(Physics.raycast(new Vector3(-3, 5, 0), down)?.gameObject.name, 'Ground');
+  assert.equal(Physics.raycast(new Vector3(-3, 5, 0), down, 100, { layerMask: Physics.layerMask(1) })?.gameObject, solid);
+  s.end();
+  Physics.setLayerCollision(0, 3, true);
+  Physics.layers[3] = '';
+});

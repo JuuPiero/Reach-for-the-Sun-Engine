@@ -1,4 +1,5 @@
 import { Prefab } from './Prefab';
+import type { GameObject } from './GameObject';
 import type { Scene } from './Scene';
 
 /** Size of the game view in CSS pixels (set by the host: player, editor Runtime view). */
@@ -40,6 +41,17 @@ export const SceneManager = {
   load(path: string): Promise<Scene> {
     if (!host) return Promise.reject(new Error('SceneManager.load: no scene host (player / editor)'));
     return host.load(path);
+  },
+  /** Keeps an object (its root, with children) alive when SceneManager.load switches scenes: it moves into the new scene with its
+   * state (no onDestroy, no new start). Timers / tweens it had on the old scene are dropped. */
+  dontDestroyOnLoad(go: GameObject): void {
+    let r = go;
+    while (r.parent) r = r.parent;
+    r._dontDestroy = true;
+  },
+  /** @internal hosts switching scenes: `keep = from._takePersistent()` before `from.end()`, then this after `to.begin()`. */
+  _carry(keep: GameObject[], to: Scene): void {
+    for (const g of keep) to.add(g);
   },
   /** Called with every scene that becomes active. */
   onActiveChanged(f: (s: Scene) => void): () => void {

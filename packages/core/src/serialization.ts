@@ -1,6 +1,6 @@
 import { Assets } from './assets';
 import { Color3, Quaternion, Vector3 } from './math';
-import { Component, GameObject, _reserveIds } from './GameObject';
+import { Component, GameObject, _newId, _reserveIds } from './GameObject';
 import { getFields, Types, type FieldInfo } from './reflection';
 import { Folder, Scene } from './Scene';
 import { UserData } from './UserData';
@@ -26,12 +26,32 @@ export interface GameObjectJson {
   id: number;
   name: string;
   tag?: string;
+  layer?: number;
   update?: boolean;
   draw?: boolean;
   prefab?: string;
   transform: { p: number[]; r: number[]; s: number[] };
   components: ComponentJson[];
   children: GameObjectJson[];
+  /** Prefab instance root saved compactly: the differences from the prefab (components / children are then empty). */
+  overrides?: PrefabOverrides;
+  /** @internal expanded instances: id of the object in the prefab file (never saved). */
+  pid?: number;
+}
+/**
+ * Differences of a prefab instance from its prefab, keyed by the ids of the prefab file's objects ("pid"). Components are keyed
+ * `Type#n` (n-th component of that type on the object). Field values are saved values (references = scene ids).
+ */
+export interface PrefabOverrides {
+  /** pid → scene id of every object of the instance (stable references across prefab edits). */
+  ids: Record<string, number>;
+  objects?: Record<string, { name?: string; tag?: string; layer?: number; update?: boolean; draw?: boolean; transform?: GameObjectJson['transform']; comps?: Record<string, { enabled?: boolean; fields?: Record<string, unknown> }> }>;
+  addedComps?: Record<string, ComponentJson[]>;
+  removedComps?: Record<string, string[]>;
+  /** Children added under a prefab object (full / compact JSON). */
+  added?: Record<string, GameObjectJson[]>;
+  /** Prefab objects removed from the instance (with their subtree). */
+  removed?: number[];
 }
 export interface FolderJson {
   name: string;
@@ -133,24 +153,289 @@ export function readFields(obj: object, json: Record<string, unknown> | undefine
 
 // ---- GameObjects ------------------------------------------------------------------------------------------------------
 
-export function serializeGameObject(go: GameObject): GameObjectJson {
+export interface SerializeOptions {
+  /** Plain full tree: prefab instances are written out entirely and lose their prefab link (prefab files, canonical data). */
+  flatten?: boolean;
+}
+
+function transformJson(go: GameObject): GameObjectJson['transform'] {
   const t = go.transform;
+  return {
+    p: [r6(t.localPosition.x), r6(t.localPosition.y), r6(t.localPosition.z)],
+    r: [r6(t.localRotation.x), r6(t.localRotation.y), r6(t.localRotation.z), r6(t.localRotation.w)],
+    s: [r6(t.localScale.x), r6(t.localScale.y), r6(t.localScale.z)],
+  };
+}
+
+/** Full JSON of one object (no prefab handling for the object itself; children follow `childJson`). */
+function plainJson(go: GameObject, childJson: (c: GameObject) => GameObjectJson): GameObjectJson {
   const j: GameObjectJson = {
     id: go.id,
     name: go.name,
-    transform: {
-      p: [r6(t.localPosition.x), r6(t.localPosition.y), r6(t.localPosition.z)],
-      r: [r6(t.localRotation.x), r6(t.localRotation.y), r6(t.localRotation.z), r6(t.localRotation.w)],
-      s: [r6(t.localScale.x), r6(t.localScale.y), r6(t.localScale.z)],
-    },
+    transform: transformJson(go),
     components: go.components.map(serializeComponent),
-    children: go.children.filter((c) => !c.destroyed).map(serializeGameObject),
+    children: go.children.filter((c) => !c.destroyed).map(childJson),
   };
   if (go.tag) j.tag = go.tag;
+  if (go.layer) j.layer = go.layer;
   if (!go.updateSelf) j.update = false;
   if (!go.drawSelf) j.draw = false;
-  if (go.prefab) j.prefab = go.prefab;
   return j;
+}
+
+export function serializeGameObject(go: GameObject, opts: SerializeOptions = {}): GameObjectJson {
+  if (opts.flatten) return plainJson(go, (c) => serializeGameObject(c, opts));
+  if (go.prefab) {
+    const pf = Assets.getPrefab(go.prefab);
+    if (pf?.data) {
+      if (go._prefabId === null) linkInstance(go, pf.data);
+      return collapseInstance(go, pf.data);
+    }
+    if (go._prefabCompact) {
+      // prefab missing: keep what was loaded, with the root's own state
+      const j = { ...(go._prefabCompact as GameObjectJson), id: go.id, name: go.name, transform: transformJson(go) };
+      return j;
+    }
+    const j = plainJson(go, (c) => serializeGameObject(c));
+    j.prefab = go.prefab;
+    return j;
+  }
+  return plainJson(go, (c) => serializeGameObject(c));
+}
+
+// ---- prefab instances ---------------------------------------------------------------------------------------------------
+
+const canonicalCache = new WeakMap<PrefabJson, GameObjectJson>();
+const canonicalBusy = new Set<PrefabJson>();
+/**
+ * A prefab's tree with every field written (read + written back once): the base that instances are compared with. Ids are the
+ * prefab file's ids (pids). Nested prefab instances inside a prefab are flattened.
+ */
+export function canonicalPrefab(data: PrefabJson): GameObjectJson {
+  let c = canonicalCache.get(data);
+  if (!c) {
+    if (canonicalBusy.has(data)) throw new Error('prefab contains itself');
+    canonicalBusy.add(data);
+    try {
+      const ctx = newReadContext(true, null);
+      ctx.temp = true;
+      const root = { ...data.gameObject };
+      if (!root.overrides) delete root.prefab; // a prefab file's root is not an instance of anything
+      const go = deserializeGameObject(root, ctx);
+      resolveReferences(ctx);
+      c = serializeGameObject(go, { flatten: true });
+      canonicalCache.set(data, c);
+    } finally {
+      canonicalBusy.delete(data);
+    }
+  }
+  return c;
+}
+
+/** Full JSON of a new instance of a prefab (prefab ids kept as `pid`s). */
+export function instanceJson(data: PrefabJson): GameObjectJson {
+  const tree = clone(canonicalPrefab(data));
+  const walk = (n: GameObjectJson) => {
+    n.pid = n.id;
+    n.children.forEach(walk);
+  };
+  walk(tree);
+  return tree;
+}
+
+const compKeys = (comps: ComponentJson[]): string[] => {
+  const n = new Map<string, number>();
+  return comps.map((c) => {
+    const i = n.get(c.type) ?? 0;
+    n.set(c.type, i + 1);
+    return `${c.type}#${i}`;
+  });
+};
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+
+/** Rewrites GameObject reference fields (ids) of components through `map`. */
+function remapRefs(comps: ComponentJson[], map: Map<number, number>): void {
+  for (const c of comps) {
+    const t = Types.get(c.type);
+    if (!t) continue;
+    for (const f of getFields(t.ctor)) if (f.type === 'gameobject' && typeof c.fields?.[f.name] === 'number') c.fields[f.name] = map.get(c.fields[f.name] as number) ?? c.fields[f.name];
+  }
+}
+
+/**
+ * The prefab's canonical tree moved into the instance's id space: pids → scene ids (`ids`, fresh ids from `alloc` for objects the
+ * instance doesn't know yet), internal references remapped, `pid` kept on every node.
+ */
+function prefabInSceneSpace(data: PrefabJson, ids: Record<string, number>, alloc: () => number, removed: Set<number>): GameObjectJson {
+  const tree = clone(canonicalPrefab(data));
+  const map = new Map<number, number>();
+  const walk = (n: GameObjectJson) => {
+    n.pid = n.id;
+    n.id = ids[n.id] ?? alloc();
+    map.set(n.pid, n.id);
+    n.children = n.children.filter((c) => !removed.has(c.id));
+    n.children.forEach(walk);
+  };
+  walk(tree);
+  const remap = (n: GameObjectJson) => {
+    remapRefs(n.components, map);
+    n.children.forEach(remap);
+  };
+  remap(tree);
+  return tree;
+}
+
+/** Full JSON (with `pid`s) of a compact instance; null if its prefab is not loaded. */
+export function expandInstance(j: GameObjectJson, alloc: () => number): GameObjectJson | null {
+  const pf = j.prefab ? Assets.getPrefab(j.prefab) : null;
+  if (!pf?.data || !j.overrides) return null;
+  const o = j.overrides;
+  const tree = prefabInSceneSpace(pf.data, o.ids ?? {}, alloc, new Set(o.removed ?? []));
+  const byPid = new Map<number, GameObjectJson>();
+  const index = (n: GameObjectJson) => (byPid.set(n.pid!, n), n.children.forEach(index));
+  index(tree);
+  for (const [pidS, m] of Object.entries(o.objects ?? {})) {
+    const n = byPid.get(+pidS);
+    if (!n) continue;
+    if (m.name !== undefined) n.name = m.name;
+    if (m.tag !== undefined) n.tag = m.tag;
+    if (m.layer !== undefined) n.layer = m.layer;
+    if (m.update !== undefined) n.update = m.update;
+    if (m.draw !== undefined) n.draw = m.draw;
+    if (m.transform) n.transform = clone(m.transform);
+    if (m.comps) {
+      const keys = compKeys(n.components);
+      for (const [key, cm] of Object.entries(m.comps)) {
+        const c = n.components[keys.indexOf(key)];
+        if (!c) continue;
+        if (cm.enabled !== undefined) {
+          if (cm.enabled) delete c.enabled;
+          else c.enabled = false;
+        }
+        Object.assign((c.fields ??= {}), clone(cm.fields ?? {}));
+      }
+    }
+  }
+  for (const [pidS, keys] of Object.entries(o.removedComps ?? {})) {
+    const n = byPid.get(+pidS);
+    if (!n) continue;
+    const all = compKeys(n.components);
+    n.components = n.components.filter((_, i) => !keys.includes(all[i]));
+  }
+  for (const [pidS, comps] of Object.entries(o.addedComps ?? {})) byPid.get(+pidS)?.components.push(...clone(comps));
+  for (const [pidS, kids] of Object.entries(o.added ?? {})) byPid.get(+pidS)?.children.push(...clone(kids));
+  // the root's own state
+  tree.id = j.id;
+  tree.name = j.name;
+  if (j.layer) tree.layer = j.layer;
+  else delete tree.layer;
+  if (j.tag) tree.tag = j.tag;
+  else delete tree.tag;
+  if (j.update === false) tree.update = false;
+  else delete tree.update;
+  if (j.draw === false) tree.draw = false;
+  else delete tree.draw;
+  tree.transform = clone(j.transform);
+  tree.prefab = j.prefab;
+  return tree;
+}
+
+/** Whether `child` is part of `root`'s instance (not added to it, not another instance). */
+const ownedBy = (child: GameObject) => child._prefabId !== null && !child.prefab;
+
+/** Compact JSON of an instance root: what differs from the prefab. */
+export function collapseInstance(go: GameObject, data: PrefabJson): GameObjectJson {
+  const ids: Record<string, number> = {};
+  const live = new Map<number, GameObject>();
+  const gather = (g: GameObject) => {
+    if (g._prefabId === null) return;
+    ids[g._prefabId] = g.id;
+    live.set(g._prefabId, g);
+    for (const c of g.children) if (!c.destroyed && ownedBy(c)) gather(c);
+  };
+  gather(go);
+  const expected = prefabInSceneSpace(data, ids, () => -1, new Set());
+  const o: PrefabOverrides = { ids };
+  const removed: number[] = [];
+  const diff = (e: GameObjectJson, isRoot: boolean) => {
+    const g = live.get(e.pid!);
+    if (!g) {
+      removed.push(e.pid!);
+      return;
+    }
+    const pid = String(e.pid);
+    const m: NonNullable<PrefabOverrides['objects']>[string] = {};
+    if (!isRoot) {
+      if (g.name !== e.name) m.name = g.name;
+      if ((g.tag || undefined) !== e.tag) m.tag = g.tag;
+      if (g.layer !== (e.layer ?? 0)) m.layer = g.layer;
+      if (g.updateSelf !== (e.update !== false)) m.update = g.updateSelf;
+      if (g.drawSelf !== (e.draw !== false)) m.draw = g.drawSelf;
+      const t = transformJson(g);
+      if (!same(t, e.transform)) m.transform = t;
+    }
+    // components
+    const mine = g.components.map(serializeComponent);
+    const myKeys = compKeys(mine);
+    const theirKeys = compKeys(e.components);
+    const comps: NonNullable<typeof m.comps> = {};
+    myKeys.forEach((k, i) => {
+      const ti = theirKeys.indexOf(k);
+      if (ti < 0) ((o.addedComps ??= {})[pid] ??= []).push(mine[i]);
+      else {
+        const a = mine[i];
+        const b = e.components[ti];
+        const cm: { enabled?: boolean; fields?: Record<string, unknown> } = {};
+        if ((a.enabled !== false) !== (b.enabled !== false)) cm.enabled = a.enabled !== false;
+        for (const [name, v] of Object.entries(a.fields ?? {})) if (!same(v, b.fields?.[name])) (cm.fields ??= {})[name] = v;
+        if (cm.enabled !== undefined || cm.fields) comps[k] = cm;
+      }
+    });
+    const gone = theirKeys.filter((k) => !myKeys.includes(k));
+    if (gone.length) (o.removedComps ??= {})[pid] = gone;
+    if (Object.keys(comps).length) m.comps = comps;
+    if (Object.keys(m).length) (o.objects ??= {})[pid] = m;
+    // children added to this object
+    const extra = g.children.filter((c) => !c.destroyed && !ownedBy(c)).map((c) => serializeGameObject(c));
+    if (extra.length) (o.added ??= {})[pid] = extra;
+    for (const c of e.children) diff(c, false);
+  };
+  diff(expected, true);
+  if (removed.length) o.removed = removed;
+  const j: GameObjectJson = { id: go.id, name: go.name, prefab: go.prefab!, transform: transformJson(go), components: [], children: [], overrides: o };
+  if (go.tag) j.tag = go.tag;
+  if (go.layer) j.layer = go.layer;
+  if (!go.updateSelf) j.update = false;
+  if (!go.drawSelf) j.draw = false;
+  return j;
+}
+
+/**
+ * Links a full-tree instance (old scenes, or a hierarchy just saved as a prefab) to its prefab: objects are matched to the prefab's
+ * by position (root to root, children by index + name).
+ */
+export function linkInstance(go: GameObject, data: PrefabJson): void {
+  const match = (g: GameObject, n: GameObjectJson) => {
+    g._prefabId = n.id;
+    const kids = g.children.filter((c) => !c.destroyed && !c.prefab);
+    n.children.forEach((nc, i) => {
+      const c = kids[i] && kids[i].name === nc.name ? kids[i] : kids.find((k) => k._prefabId === null && k.name === nc.name);
+      if (c) match(c, nc);
+    });
+  };
+  match(go, canonicalPrefab(data));
+}
+
+/** Makes `go` a plain object tree (Unpack Prefab). */
+export function unpackInstance(go: GameObject): void {
+  const walk = (g: GameObject) => {
+    g._prefabId = null;
+    for (const c of g.children) if (!c.prefab) walk(c);
+  };
+  go.prefab = null;
+  go._prefabCompact = null;
+  walk(go);
 }
 
 export function serializeComponent(c: Component): ComponentJson {
@@ -173,11 +458,15 @@ export interface ReadContext {
   keepIds: boolean;
   /** Fallback for references to objects outside what is read (duplicates within a scene). */
   scene?: Scene | null;
+  /** Throw-away objects (canonical prefab data): ids are not reserved. */
+  temp?: boolean;
 }
 
 export function newReadContext(keepIds: boolean, scene: Scene | null = null): ReadContext {
   return { ids: new Map(), pending: [], keepIds, scene };
 }
+
+let tempIds = -1;
 
 export function deserializeComponent(go: GameObject, j: ComponentJson, ctx?: ReadContext): Component {
   const t = Types.get(j.type);
@@ -198,12 +487,22 @@ export function deserializeComponent(go: GameObject, j: ComponentJson, ctx?: Rea
 }
 
 export function deserializeGameObject(j: GameObjectJson, ctx: ReadContext): GameObject {
+  let compact: GameObjectJson | null = null;
+  if (j.prefab && j.overrides) {
+    // compact prefab instance: rebuilt from the prefab + its overrides (fresh ids for prefab objects the instance didn't have)
+    const full = expandInstance(j, () => (ctx.keepIds ? _newId() : tempIds--));
+    if (full) j = full;
+    else compact = j;
+  }
   const go = new GameObject(j.name, ctx.keepIds ? j.id : undefined);
   ctx.ids.set(j.id, go);
   go.tag = j.tag ?? '';
+  go.layer = typeof j.layer === 'number' ? j.layer | 0 : 0;
   go.updateSelf = j.update !== false;
   go.drawSelf = j.draw !== false;
   go.prefab = j.prefab ?? null;
+  go._prefabId = j.pid ?? null;
+  if (compact) go._prefabCompact = compact;
   const t = j.transform;
   if (t) {
     go.transform.localPosition.set(t.p?.[0] ?? 0, t.p?.[1] ?? 0, t.p?.[2] ?? 0);
@@ -212,6 +511,11 @@ export function deserializeGameObject(j: GameObjectJson, ctx: ReadContext): Game
   }
   for (const cj of j.components ?? []) deserializeComponent(go, cj, ctx);
   for (const cj of j.children ?? []) deserializeGameObject(cj, ctx).transform.setParent(go.transform);
+  // full-tree instance (older files): link its objects to the prefab's so it saves compactly
+  if (go.prefab && go._prefabId === null && !compact) {
+    const pf = Assets.getPrefab(go.prefab);
+    if (pf?.data) linkInstance(go, pf.data);
+  }
   return go;
 }
 
@@ -224,7 +528,7 @@ export function resolveReferences(ctx: ReadContext): void {
 // ---- scenes -----------------------------------------------------------------------------------------------------------
 
 function serializeFolder(f: Folder): FolderJson {
-  const j: FolderJson = { name: f.name, folders: f.folders.map(serializeFolder), gameObjects: f.gameObjects.filter((g) => !g.destroyed).map(serializeGameObject) };
+  const j: FolderJson = { name: f.name, folders: f.folders.map(serializeFolder), gameObjects: f.gameObjects.filter((g) => !g.destroyed).map((g) => serializeGameObject(g)) };
   if (!f.active) j.active = false;
   return j;
 }

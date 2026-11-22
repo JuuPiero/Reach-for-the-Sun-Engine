@@ -20,7 +20,7 @@ export function readProject(root: string): ProjectSettings {
   } catch {
     /* defaults */
   }
-  return { name: j.name ?? path.basename(root), startScene: j.startScene ?? 'Assets/Scenes/Main.scn.json', editorScene: j.editorScene };
+  return { ...j, name: j.name ?? path.basename(root), startScene: j.startScene ?? 'Assets/Scenes/Main.scn.json', editorScene: j.editorScene };
 }
 
 export const toPosix = (p: string) => p.split(path.sep).join('/');

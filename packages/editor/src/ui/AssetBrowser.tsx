@@ -57,6 +57,7 @@ export function AssetBrowser() {
   const open = (p: string, dir: boolean) => {
     if (dir) return editor.setAssetFolder(p);
     if (p.endsWith('.scn.json')) return void editor.openScene(p);
+    if (p.endsWith('.pfb.json')) return void editor.openPrefab(p);
     if (p.endsWith('.ts')) return window.open(`vscode://file/${editor.projectRoot}/${p}`, '_self');
   };
 
@@ -64,7 +65,7 @@ export function AssetBrowser() {
     void editor.selectAsset(p);
     showContextMenu(e, [
       { label: dir ? 'Open' : p.endsWith('.scn.json') ? 'Open Scene' : 'Open', action: () => open(p, dir) },
-      ...(p.endsWith('.pfb.json') ? [{ label: 'Add to Scene', action: () => void editor.instantiatePrefab(p) }] : []),
+      ...(p.endsWith('.pfb.json') ? [{ label: 'Add to Scene', action: () => void editor.instantiatePrefab(p) }, { label: 'Open Prefab', action: () => void editor.openPrefab(p) }] : []),
       { separator: true },
       { label: 'Rename', shortcut: 'F2', action: () => setRenaming(p) },
       { label: favs.includes(p) ? 'Remove from Favorites' : 'Add to Favorites', action: () => toggleFav(p) },

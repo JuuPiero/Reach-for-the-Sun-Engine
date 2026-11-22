@@ -24,5 +24,6 @@ export * from './Audio';
 export * from './components/audio';
 export * from './components/ui';
 export * from './SaveData';
+export * from './ProjectSettings';
 export * from './scripts';
 export * from './sceneLoader';

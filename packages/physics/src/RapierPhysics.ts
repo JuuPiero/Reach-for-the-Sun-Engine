@@ -17,6 +17,12 @@ import {
   type Scene,
 } from '@rs/core';
 
+
+/** Rapier interaction groups of a layer: membership = its bit, filter = its row of the collision matrix. */
+function groupsOf(layer: number): number {
+  const l = layer & 15;
+  return (((1 << l) << 16) | (Physics.collisionMatrix[l] & 0xffff)) >>> 0;
+}
 /**
  * Rapier implementation of the RS Engine physics provider. One Rapier world per playing scene, rebuilt incrementally every
  * fixed step from the components: bodies keyed by the GameObject that owns them (RigidBody / CharacterController, or a static
@@ -180,7 +186,9 @@ export class RapierPhysics implements PhysicsProvider {
       const half = Math.max(0, c.height / 2 - c.radius);
       const desc = RAPIER.ColliderDesc.capsule(half, c.radius).setTranslation(c.center.x, c.center.y, c.center.z);
       desc.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS).setActiveCollisionTypes(RAPIER.ActiveCollisionTypes.ALL);
-      return { desc, sig: `cc|${c.radius}|${c.height}|${c.center.x},${c.center.y},${c.center.z}` };
+      const g = groupsOf(go.layer);
+      desc.setCollisionGroups(g).setSolverGroups(g);
+      return { desc, sig: `cc|${c.radius}|${c.height}|${c.center.x},${c.center.y},${c.center.z}|${g}` };
     }
     // pose of the collider's object in the owner's space (scale applied to the shape, not the pose)
     const ownerWorld = owner.transform.worldMatrix;
@@ -212,7 +220,9 @@ export class RapierPhysics implements PhysicsProvider {
     desc.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS).setActiveCollisionTypes(RAPIER.ActiveCollisionTypes.ALL);
     if (mass > 0 && !c.isTrigger) desc.setMass(mass);
     else if (rec.kind === 'dynamic') desc.setDensity(c.isTrigger ? 0 : 1);
-    const sig = `${c.shape}|${r4(center.x)},${r4(center.y)},${r4(center.z)}|${r4(relQ.x)},${r4(relQ.y)},${r4(relQ.z)},${r4(relQ.w)}|${c.size.x},${c.size.y},${c.size.z}|${c.radius}|${c.height}|${r4(scale.x)},${r4(scale.y)},${r4(scale.z)}|${c.isTrigger}|${c.friction}|${c.restitution}|${mass}`;
+    const groups = groupsOf(go.layer);
+    desc.setCollisionGroups(groups).setSolverGroups(groups);
+    const sig = `${groups}|${c.shape}|${r4(center.x)},${r4(center.y)},${r4(center.z)}|${r4(relQ.x)},${r4(relQ.y)},${r4(relQ.z)},${r4(relQ.w)}|${c.size.x},${c.size.y},${c.size.z}|${c.radius}|${c.height}|${r4(scale.x)},${r4(scale.y)},${r4(scale.z)}|${c.isTrigger}|${c.friction}|${c.restitution}|${mass}`;
     return { desc, sig };
   }
 
@@ -313,10 +323,12 @@ export class RapierPhysics implements PhysicsProvider {
 
   private filter(w: WorldRec, o?: QueryOptions): (c: RAPIER.Collider) => boolean {
     const ignore = o?.ignore ?? null;
+    const mask = o?.layerMask ?? Physics.defaultQueryMask;
     return (c) => {
-      if (!ignore) return true;
       const rec = w.byHandle.get(c.handle);
       if (!rec) return true;
+      if (!(mask & (1 << (rec.go.layer & 15)))) return false;
+      if (!ignore) return true;
       for (let g: GameObject | null = rec.go; g; g = g.parent) if (g === ignore) return false;
       return rec.owner.go !== ignore;
     };
@@ -391,7 +403,7 @@ export class RapierPhysics implements PhysicsProvider {
     const t = go.transform.position;
     rec.body.setTranslation({ x: t.x, y: t.y, z: t.z }, true);
     w.world.propagateModifiedBodyPositionsToColliders();
-    k.computeColliderMovement(cr.collider, { x: d.x, y: d.y, z: d.z }, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS);
+    k.computeColliderMovement(cr.collider, { x: d.x, y: d.y, z: d.z }, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, groupsOf(go.layer));
     const m = k.computedMovement();
     const moved = new Vector3(m.x, m.y, m.z);
     const np = new Vector3(t.x + moved.x, t.y + moved.y, t.z + moved.z);
