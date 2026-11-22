@@ -86,7 +86,7 @@ export class Player extends Behavior {
 - **Hierarchies**: cây Folder / GameObject (folder chữ xanh đậm, object chữ nghiêng), hai nút bật/tắt Update / Draw ở đầu mỗi
   dòng, mũi tên mở / đóng, tìm kiếm. Kéo thả để đổi cha / đổi folder / sắp xếp (thả vào giữa dòng = làm con, mép trên / dưới =
   chèn trước / sau), F2 hoặc double-click để đổi tên, chuột phải: Create, Rename, Duplicate, Create Prefab, Unparent, Delete.
-- **Macro Shelf**: các tab Primitive / Light / Level / Asset với nút tạo nhanh (Cube, Sphere, Floor, đèn, camera, folder, script…).
+- **Macro Shelf**: các tab Primitive / Light / Level / UI / Audio / Asset với nút tạo nhanh (Cube, Sphere, Floor, đèn, camera, folder, Text, Button, Sound, script…).
 - **Runtime view**: camera editor — giữ chuột phải để nhìn + W/A/S/D/Q/E để bay (lăn chuột khi đang giữ để đổi tốc độ, Shift
   để nhanh), chuột giữa để kéo ngang, lăn chuột để tiến / lùi, Alt + chuột trái để xoay quanh, F để nhìn vào object đang chọn.
   Click để chọn (Ctrl / Shift để chọn thêm), gizmo Move / Rotate / Scale (W / E / R), Local / Global, lưới, viền cam cho object
@@ -111,7 +111,56 @@ export class Player extends Behavior {
   (File ▸ Reload Scene để lấy bản trên đĩa).
 - Giao diện tông đen + cam, mọi control (menu, ô chọn, checkbox, thanh trượt, ô màu, ô số X/Y/Z) đều tự vẽ.
 
-## Giới hạn hiện tại (mốc 2)
+## Âm thanh
 
-Chưa có VFX, âm thanh, UI trong game, nhiều scene cùng lúc, skinned mesh / root motion, layer va chạm; prefab chưa có override
-(đặt prefab = bản sao có ghi nguồn). Game dùng vật lý nặng thêm ~3,5 MB (Rapier bản nhúng WASM).
+- **AudioSource** (Add Component ▸ Audio): `clip` (wav / mp3 / ogg trong Assets), volume, pitch, loop, Play On Start, Spatial
+  (âm 3D, nhỏ dần theo khoảng cách minDistance → maxDistance tính từ AudioListener). Script: `play()`, `stop()`, `pause()`,
+  `isPlaying`, `playOneShot(path, volume)` (hiệu ứng ngắn, nhiều cái chồng nhau được).
+- **AudioListener**: "tai" của game, thường gắn vào camera (Create ▸ Camera và scene mới tự thêm).
+- `AudioEngine.masterVolume`, `AudioEngine.muted`. Trình duyệt chỉ cho phát tiếng sau lần bấm phím / chuột đầu tiên — engine tự
+  mở khoá khi đó.
+
+## UI trong game
+
+Component UI (Add Component ▸ UI hoặc tab **UI / Audio** của Macro Shelf) vẽ đè lên game bằng HTML, theo độ phân giải tham chiếu
+cao 720 px (tự co giãn theo khung):
+- Mọi UI có **Anchor** (TopLeft … BottomRight, Center, Stretch), X / Y (Y hướng lên; Stretch: X / Y = lề), Width / Height,
+  Opacity. Object UI con nằm trong khung của object UI cha (tạo UI khi đang chọn một object UI là tạo con của nó).
+- **UIText** (text, cỡ chữ, màu, đậm, căn lề, đổ bóng), **UIImage** (ảnh + màu), **UIPanel** (nền, độ trong, bo góc, viền),
+  **UIButton** (chữ, màu thường / hover, `interactable`; On Click: chọn object + tên hàm, hoặc trong script
+  `button.onClick(() => …)`).
+- Ẩn / hiện một menu: `go.active = false / true` (tắt cả Update và Draw).
+- Trong editor: UI hiện cả lúc edit (nút **UI** trên thanh Runtime để ẩn), click vào UI để chọn object; nút chỉ bấm được khi Play.
+
+## Scene, thời gian, tween
+
+- `SceneManager.load('Assets/Scenes/Level2.scn.json')`: chuyển scene khi đang chơi (scene cũ kết thúc, scene mới bắt đầu). Trong
+  editor, Stop quay về scene đang chỉnh. `SceneManager.active`, `SceneManager.onActiveChanged(fn)`.
+- `Application.timeScale` (0 = dừng game, ví dụ menu pause), `Application.unscaledDeltaTime`.
+- Hẹn giờ trong component: `await this.wait(1.5)` (theo thời gian game, dừng khi pause), `this.invoke(() => …, 2)`. Hẹn giờ bị
+  huỷ khi scene kết thúc.
+- `Tween.to(target, { field: value, … }, duration, { ease: Ease.outBack, delay, repeat: -1, yoyo: true, onComplete })`: tween số,
+  Vector3, Color3 của bất kỳ object nào (`Tween.to(transform, { localPosition: new Vector3(0, 3, 0) }, 1)`), `tween.kill()`,
+  `await tween.finished`, `Tween.killTweensOf(target)`.
+- `SaveData.setNumber('best', 10)`, `getNumber`, `setString` / `getString`, `setObject` / `getObject`, `has`, `delete`, `clear`
+  (lưu trong trình duyệt, riêng cho từng project).
+
+## Input bổ sung
+
+- Tay cầm: `Input.getButton('A')` / `getButtonDown` / `getButtonUp` (A, B, X, Y, LB, RB, LT, RT, Back, Start, LS, RS, Up, Down,
+  Left, Right, Home), `Input.getAxis('LeftX' | 'LeftY' | 'RightX' | 'RightY' | 'LT' | 'RT')`, `Input.gamepadConnected`,
+  `Input.deadZone`.
+- Khoá chuột (game góc nhìn thứ nhất): `Input.lockCursor(true)` hoặc `Input.lockOnClick = true`; `Input.cursorLocked`.
+- Camera: `Camera.main`, `camera.screenPointToRay(Input.mouseX, Input.mouseY)` (kết hợp `Physics.raycast` để click chọn vật),
+  `camera.worldToScreenPoint(p)` (đặt UI theo vị trí 3D).
+
+## Demo
+
+`examples/Demo`: scene **Main** (robot nhặt coin, HUD đếm coin + thời gian + kỷ lục lưu bằng SaveData, Esc / P mở menu pause với
+nút Resume / Title Screen, nhạc nền + tiếng nhảy / nhặt coin) và scene **Title** (camera xoay, nút Start / phím Enter). Âm thanh do
+`scripts/gen-demo-sounds.mjs` tạo ra.
+
+## Giới hạn hiện tại (mốc 3)
+
+Chưa có VFX, nhiều scene cùng lúc (additive), skinned mesh / root motion, layer va chạm; prefab chưa có override (đặt prefab = bản
+sao có ghi nguồn). Game dùng vật lý nặng thêm ~3,5 MB (Rapier bản nhúng WASM).

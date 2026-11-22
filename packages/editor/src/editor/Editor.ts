@@ -25,6 +25,12 @@ import {
   UserData,
   Vector3,
   Motion,
+  AudioListener,
+  AudioSource,
+  UIComponent,
+  SaveData,
+  SceneManager,
+  loadScene,
   emptyFsm,
   type MotionFsmData,
   type Component,
@@ -44,7 +50,7 @@ import { initPhysics } from 'virtual:rs/physics';
 export type EditorEvent = 'scene' | 'selection' | 'inspector' | 'mode' | 'files' | 'dirty' | 'log' | 'gizmo';
 export type PlayMode = 'edit' | 'play' | 'pause';
 export type GizmoMode = 'move' | 'rotate' | 'scale';
-export type CreateKind = 'Empty' | MeshShape | 'DirectionalLight' | 'PointLight' | 'SpotLight' | 'AmbientLight' | 'Camera';
+export type CreateKind = 'Empty' | MeshShape | 'DirectionalLight' | 'PointLight' | 'SpotLight' | 'AmbientLight' | 'Camera' | 'UIText' | 'UIButton' | 'UIImage' | 'UIPanel' | 'AudioSource';
 
 interface UndoEntry {
   label: string;
@@ -109,6 +115,8 @@ export class Editor {
     await initPhysics();
     const p = await api.project();
     this.projectName = p.name;
+    SaveData.namespace = `editor:${p.name}`;
+    SceneManager._setHost({ load: (path) => this.loadSceneInPlay(path) });
     this.projectRoot = p.root;
     this.startScene = p.startScene;
     await this.refreshFiles();
@@ -163,7 +171,7 @@ export class Editor {
   // ---- scenes -----------------------------------------------------------------------------------------------------------
   private setScene(s: Scene, resetUndo: boolean): void {
     this.scene = s;
-    Prefab.activeScene = s;
+    SceneManager._setActive(s);
     if (resetUndo) {
       this.undoStack = [];
       this.redoStack = [];
@@ -196,6 +204,7 @@ export class Editor {
     cam.transform.localPosition.set(0, 4, -10);
     quatFromEulerDeg(15, 0, 0, cam.transform.localRotation);
     cam.addComponent(Camera);
+    cam.addComponent(AudioListener);
     s.root.add(cam);
     this.setScene(s, true);
     this.setDirty(false);
@@ -341,7 +350,17 @@ export class Editor {
     } else if (kind === 'PointLight') go.addComponent(PointLight);
     else if (kind === 'SpotLight') go.addComponent(SpotLight);
     else if (kind === 'AmbientLight') go.addComponent(AmbientLight);
-    else if (kind === 'Camera') go.addComponent(Camera).main = !this.scene.findComponents(Camera).length;
+    else if (kind === 'Camera') {
+      go.addComponent(Camera).main = !this.scene.findComponents(Camera).length;
+      if (!this.scene.findComponents(AudioListener).length) go.addComponent(AudioListener);
+    } else if (kind === 'AudioSource') go.addComponent(AudioSource);
+    else if (kind === 'UIText' || kind === 'UIButton' || kind === 'UIImage' || kind === 'UIPanel') {
+      const c = go.addComponent(kind);
+      if (kind === 'UIPanel') (c as UIComponent).width = (c as UIComponent).height = 300;
+      // UI objects go under the selected UI object (nested layout)
+      const sel = this.selectedObjects[0];
+      if (!where && sel?.components.some((x) => x instanceof UIComponent)) where = sel;
+    }
     else if (kind !== 'Empty') {
       const m = go.addComponent(Mesh);
       m.shape = kind;
@@ -548,12 +567,33 @@ export class Editor {
     }
     if (this.mode !== 'edit') return;
     this.playSnapshot = serializeScene(this.scene);
+    this.playScenePath = this.scene.path;
+    this.playSceneName = this.scene.name;
     Application._reset();
     if (this.gameElement) Input.attach(this.gameElement);
-    Prefab.activeScene = this.scene;
+    SceneManager._setActive(this.scene);
     this.mode = 'play';
     this.scene.begin();
     this.emit('mode', 'inspector');
+  }
+  private playScenePath: string | null = null;
+  private playSceneName = '';
+
+  /** SceneManager.load while playing: the current scene ends and the loaded one plays; Stop returns to the edited scene. */
+  private async loadSceneInPlay(path: string): Promise<Scene> {
+    if (this.mode === 'edit') {
+      await this.openScene(path);
+      return this.scene;
+    }
+    const next = await loadScene(path);
+    this.scene.end();
+    this.scene = next;
+    SceneManager._setActive(next);
+    this.selection = [];
+    Application._reset();
+    next.begin();
+    this.emit('scene', 'selection', 'inspector');
+    return next;
   }
   pause(): void {
     if (this.mode === 'play') this.mode = 'pause';
@@ -575,8 +615,8 @@ export class Editor {
     this.playSnapshot = null;
     this.mode = 'edit';
     if (snap) {
-      const s = deserializeScene(snap, this.scene.name);
-      s.path = this.scene.path;
+      const s = deserializeScene(snap, this.playSceneName || this.scene.name);
+      s.path = this.playScenePath;
       this.setScene(s, false);
     }
     this.emit('mode', 'scene', 'inspector');

@@ -14,6 +14,8 @@ import { Color3, Color4, Plane, Quaternion, Vector3 } from '@babylonjs/core/Math
 import '@babylonjs/core/Rendering/outlineRenderer';
 import { AmbientLight, Camera, CharacterController, Collider, DirectionalLight, Motion, PointLight, SpotLight, type GameObject } from '@rs/core';
 import { BabylonBackend } from '@rs/render-babylon';
+import { UIRenderer } from '../../../runtime/src/UIRenderer';
+import { Screen } from '@rs/core';
 import { editor } from '../editor/Editor';
 import { DT_ASSET } from './Hierarchies';
 import { useEditor } from './hooks';
@@ -37,6 +39,9 @@ export function RuntimeView() {
   viewRef.current = view;
   const gridRef = useRef(showGrid);
   gridRef.current = showGrid;
+  const [showUI, setShowUI] = useState(true);
+  const uiRef = useRef(showUI);
+  uiRef.current = showUI;
   const focusRef = useRef<() => void>(() => {});
 
   useEffect(() => {
@@ -44,6 +49,14 @@ export function RuntimeView() {
     const backend = new BabylonBackend(canvas);
     const bscene = backend.scene;
     editor.gameElement = canvas;
+    // ---- in-game UI overlay: buttons work in play mode, clicks select UI objects while editing
+    const ui = new UIRenderer(host.current!, {
+      interactive: () => editor.mode === 'play',
+      onPick: (go, additive) => editor.select([go.id], additive),
+      isSelected: (go) => editor.mode === 'edit' && editor.selection.includes(go.id),
+    });
+    const updateScreen = () => Screen._set(canvas.clientWidth, canvas.clientHeight, window.devicePixelRatio || 1);
+    updateScreen();
     // ---- editor camera
     const cam = new FreeCamera('__editorCamera', new Vector3(0, 6, -12), bscene);
     cam.minZ = 0.05;
@@ -425,13 +438,18 @@ export function RuntimeView() {
           outlined.add(m);
         }
       backend.render();
+      ui.root.style.display = uiRef.current || editor.mode !== 'edit' ? '' : 'none';
+      ui.sync(scene);
       statT += dt;
       if (statT > 0.5) {
         statT = 0;
         setStats(`FPS ${backend.engine.getFps().toFixed(1)}  ·  ${(dt * 1000).toFixed(1)} ms  ·  objects ${scene.allGameObjects().length}  ·  meshes ${bscene.getActiveMeshes().length}  ·  ${editor.mode.toUpperCase()}${backend.pendingLoads ? `  ·  loading ${backend.pendingLoads}` : ''}`);
       }
     });
-    const ro = new ResizeObserver(() => backend.resize());
+    const ro = new ResizeObserver(() => {
+      backend.resize();
+      updateScreen();
+    });
     ro.observe(host.current!);
     (window as unknown as { __rsView: unknown }).__rsView = { backend, cam, gizmos };
     return () => {
@@ -441,6 +459,7 @@ export function RuntimeView() {
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('keyup', ku);
       gizmos.dispose();
+      ui.dispose();
       backend.dispose();
       editor.gameElement = null;
     };
@@ -477,6 +496,9 @@ export function RuntimeView() {
         </button>
         <button className={`rs-seg${showColliders ? ' active' : ''}`} title="Show every collider (selected objects always show theirs)" onClick={() => setShowColliders(!showColliders)}>
           Colliders
+        </button>
+        <button className={`rs-seg${showUI ? ' active' : ''}`} title="Show the in-game UI while editing" onClick={() => setShowUI(!showUI)}>
+          UI
         </button>
         <button className="rs-tool" title="Focus selection (F)" onClick={() => focusRef.current()}>
           <Icons.Focus size={14} />

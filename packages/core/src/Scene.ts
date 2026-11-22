@@ -3,6 +3,7 @@ import { Debug } from './Debug';
 import { Behavior, Component, GameObject, _nextTransformFrame } from './GameObject';
 import { Input } from './Input';
 import { Physics } from './Physics';
+import type { SceneTimer, Tween } from './Tween';
 
 /**
  * Folder / Scene — RE-style organisation: a scene is a tree of Folders (each can be switched off as a whole) holding root
@@ -90,6 +91,15 @@ export class Scene {
   private readonly _toStart: Component[] = [];
   private readonly _toDestroy: GameObject[] = [];
   private _physicsTime = 0;
+  /** Seconds of play in this scene (timers / tweens). */
+  time = 0;
+  /** @internal */ _timers: SceneTimer[] = [];
+  /** @internal */ _tweens: Tween[] = [];
+
+  /** Resolves after `seconds` of play time (`owner` destroyed first = never). */
+  wait(seconds: number, owner: object | null = null): Promise<void> {
+    return new Promise((resolve) => this._timers.push({ at: this.time + Math.max(0, seconds), resolve, owner, cancelled: false }));
+  }
   /** Bumped by structural changes (objects / folders added, removed, moved). */
   version = 0;
 
@@ -233,6 +243,9 @@ export class Scene {
     this._toStart.length = 0;
     this._toDestroy.length = 0;
     this._physicsTime = 0;
+    for (const t of this._tweens) t.kill();
+    this._tweens = [];
+    this._timers = [];
     Physics.provider?.dispose(this);
   }
 
@@ -241,6 +254,7 @@ export class Scene {
     _nextTransformFrame();
     if (!this.playing) return;
     Application._tick(dt);
+    Input._beginFrame();
     const runs = (c: Component) => c.enabled && !c.gameObject._destroyed && c.gameObject.activeInHierarchy;
     if (this._toStart.length) {
       const list = this._toStart.splice(0);
@@ -290,6 +304,34 @@ export class Scene {
             Debug.exception(e, c);
           }
         }
+    // timers (Behavior.wait / invoke) and tweens, in play time
+    this.time += Application.deltaTime;
+    if (this._timers.length) {
+      const due = this._timers.filter((t) => t.at <= this.time);
+      if (due.length) {
+        this._timers = this._timers.filter((t) => t.at > this.time);
+        for (const t of due) {
+          const owner = t.owner as { gameObject?: { destroyed: boolean } } | null;
+          if (t.cancelled || owner?.gameObject?.destroyed) continue;
+          try {
+            t.resolve();
+          } catch (e) {
+            Debug.exception(e);
+          }
+        }
+      }
+    }
+    if (this._tweens.length) {
+      const dt = Application.deltaTime;
+      this._tweens = this._tweens.filter((tw) => {
+        try {
+          return tw._advance(dt);
+        } catch (e) {
+          Debug.exception(e);
+          return false;
+        }
+      });
+    }
     for (const g of all)
       for (const c of g.components)
         if (c.lateUpdate && c._started && runs(c)) {

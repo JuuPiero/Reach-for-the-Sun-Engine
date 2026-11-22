@@ -82,3 +82,24 @@ conditions on parameters (`conditionsMet`), triggers consumed when used and clea
 loaded by `Assets.loadFsm` (normalized, shared, preloaded with scenes). Renderer side: `BabylonBackend.syncMotion`. Editor: Motion
 `updateInEdit` is ticked by the Runtime view in edit mode (restart when the fsm / clip field changes); FsmEditor (Inspector) edits
 parameters / states (renames follow into transitions / initial) / transitions / conditions.
+
+## 7. Gameplay services (milestone 3)
+- **Scene switching** (`SceneManager.ts`): `SceneManager._setHost({ load })` is installed by the host — `Player` (game: the load is
+  queued and applied between frames: end old scene, `_setActive`, `Application._reset`, begin) and `Editor` (`loadSceneInPlay`:
+  same, but Stop deserializes the play snapshot back with the edited scene's path / name). `_setActive` also sets
+  `Prefab.activeScene`; `Camera.main` reads `SceneManager.active`. `Screen` (CSS pixels of the game view) is set by the hosts on resize.
+- **Timers / tweens** (`Scene.ts`, `Tween.ts`): per-scene lists advanced after `update`, before `lateUpdate`, with scaled time
+  (`scene.time`); `Component.wait` / `invoke` push `SceneTimer`s owned by the component (dropped when it is destroyed);
+  `Scene.end` kills tweens and drops timers (pending `wait` promises never resolve). Tweens lerp numbers / Vector3 / Color3 fields by
+  name and call `target.markDirty?.()` (Transform).
+- **Audio** (`Audio.ts`, `components/audio.ts`): one lazy AudioContext (`AudioEngine`), resumed by `Input` on the first key / mouse
+  press; buffers cached per path (`invalidate` on file change). AudioSource = buffer source → gain → (panner when spatial) → master;
+  `AudioListener` / spatial sources copy world poses every frame (`setPannerPosition` mirrors Z: Babylon / RS is left-handed, WebAudio
+  right-handed). Node: everything no-ops without `AudioContext`.
+- **UI** (`components/ui.ts` data, `packages/runtime/src/UIRenderer.ts` drawing): DOM overlay, one absolutely positioned div per
+  GameObject with UI components, nested under the nearest UI ancestor's div, inside a root of `UI.referenceHeight` (720) CSS px
+  scaled to the host. Anchor fractions give left / top (y up). Buttons: `pointerenter/leave` → `_hover`, click → `UIButton.click()`
+  only when `interactive()` (game always, editor in play); otherwise `pointerdown` → `onPick` (editor selection, orange outline).
+  Display follows `visibleInHierarchy` (`go.active` = update + draw).
+- **Input** additions: gamepads polled in `Input._beginFrame` (standard mapping, `GAMEPAD_BUTTONS`), pointer lock on the attached
+  element. **SaveData**: localStorage keys `<namespace>:<key>` (namespace = project name; the editor uses `editor:<name>` so play sessions do not touch the game's saves).

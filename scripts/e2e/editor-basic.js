@@ -8,9 +8,9 @@
   const s0 = E.scene;
   const N0 = s0.allGameObjects().length;
   check('scene loaded', s0.name === 'Main' && N0 >= 19, N0);
-  check('folders', s0.root.folders.map((f) => f.name).join(',') === 'Environment,Player,Props,Gimmick');
+  check('folders', s0.root.folders.map((f) => f.name).join(',') === 'Environment,Player,Props,Gimmick,UI');
   const player = s0.find('Player');
-  check('script component deserialized', player.components.map((c) => c.constructor.name).length === 2 && !!player.getComponent('PlayerController'));
+  check('script component deserialized', player.components.map((c) => c.constructor.name).length === 3 && !!player.getComponent('PlayerController'));
   const pc = player.getComponent('PlayerController');
   check('userdata reference resolved', pc.param && pc.param.moveSpeed === 3.5, pc.param && pc.param.moveSpeed);
   check('gameobject reference resolved', pc.followCamera && pc.followCamera.name === 'MainCamera');

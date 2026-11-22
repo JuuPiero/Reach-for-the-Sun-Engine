@@ -158,6 +158,17 @@ export abstract class Component {
     return this.gameObject.getComponent(type);
   }
 
+  /** Resolves after `seconds` of play time (`await this.wait(1)`); never resolves if this object is destroyed first. */
+  wait(seconds: number): Promise<void> {
+    const s = this.gameObject?.scene;
+    return s ? s.wait(seconds, this) : new Promise(() => {});
+  }
+
+  /** Calls `fn` after `seconds` of play time (not if this object is destroyed first). */
+  invoke(fn: () => void, seconds: number): void {
+    void this.wait(seconds).then(fn);
+  }
+
   /** Lifecycle (play mode): awake once when created, start before its first update. */
   awake?(): void;
   start?(): void;
@@ -220,6 +231,14 @@ export class GameObject {
   }
   get destroyed(): boolean {
     return this._destroyed;
+  }
+
+  /** Updates and draws (both `updateSelf` and `drawSelf`); setting it turns both on / off, like hiding a menu. */
+  get active(): boolean {
+    return this.updateSelf && this.drawSelf;
+  }
+  set active(v: boolean) {
+    this.updateSelf = this.drawSelf = v;
   }
 
   /** Active in the hierarchy: its folders are active and it (and its parents) update. */

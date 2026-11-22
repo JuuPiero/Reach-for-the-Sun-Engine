@@ -22,6 +22,29 @@ export const Icons = {
       <path d="M1.5 12.5l2-5h11l-2 5z" />
     </I>
   ),
+  Text: (p: P) => (
+    <I {...p}>
+      <path d="M3 3.5h10M8 3.5v9.5M6 13h4" />
+    </I>
+  ),
+  Button: (p: P) => (
+    <I {...p}>
+      <rect x="1.5" y="4.5" width="13" height="7" rx="2" />
+      <path d="M5.5 8h5" />
+    </I>
+  ),
+  Panel: (p: P) => (
+    <I {...p}>
+      <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+      <path d="M2 5.5h12" />
+    </I>
+  ),
+  Audio: (p: P) => (
+    <I {...p}>
+      <path d="M2 6v4h3l3.5 3v-10l-3.5 3z" />
+      <path d="M11 5.5c1.3 1.3 1.3 3.7 0 5M12.8 3.8c2.2 2.3 2.2 6.1 0 8.4" />
+    </I>
+  ),
   Cube: (p: P) => (
     <I {...p}>
       <path d="M8 1.5l5.5 3v7l-5.5 3-5.5-3v-7z" />
@@ -301,5 +324,6 @@ export function assetVisual(path: string, dir: boolean): { icon: (p: P) => JSX.E
   if (p.endsWith('.ts')) return { icon: Icons.Script, color: '#62d26f', kind: 'Script' };
   if (/\.(glb|gltf)$/.test(p)) return { icon: Icons.Model, color: '#4fd1c5', kind: 'Model' };
   if (/\.(png|jpe?g|webp)$/.test(p)) return { icon: Icons.Image, color: '#e7c35a', kind: 'Texture' };
+  if (/\.(wav|mp3|ogg)$/.test(p)) return { icon: Icons.Audio, color: '#ff9d3c', kind: 'Audio' };
   return { icon: Icons.File, color: '#9aa0a6', kind: 'File' };
 }

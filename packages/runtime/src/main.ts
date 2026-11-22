@@ -7,7 +7,7 @@ import { Player } from './Player';
 
 Assets.baseUrl = './';
 const canvas = document.getElementById('rs-canvas') as HTMLCanvasElement;
-const player = new Player(canvas);
+const player = new Player(canvas, project.name);
 const scene = new URLSearchParams(location.search).get('scene') ?? project.startScene;
 player.start(scene).then(
   () => document.getElementById('rs-loading')?.remove(),

@@ -1,4 +1,4 @@
-import { Application, Behavior, CharacterController, Debug, Input, Motion, Quaternion, Vector3, field, type GameObject } from '@rs/core';
+import { Application, AudioSource, Behavior, CharacterController, Debug, Input, Motion, Quaternion, Vector3, field, type GameObject } from '@rs/core';
 import type { PlayerParam } from './PlayerParam';
 
 /**
@@ -13,6 +13,9 @@ export class PlayerController extends Behavior {
   @field({ type: 'gameobject' }) body: GameObject | null = null;
   cameraOffset = new Vector3(0, 6, -9);
   @field({ min: 1, step: 0.5 }) runMultiplier = 2;
+  @field({ type: 'asset', assetKind: ['wav', 'mp3', 'ogg'], header: 'Sounds' }) jumpSound = '';
+  @field({ type: 'asset', assetKind: ['wav', 'mp3', 'ogg'] }) coinSound = '';
+  private _audio: AudioSource | null = null;
   private _vy = 0;
   private _coins = 0;
   private _cc: CharacterController | null = null;
@@ -21,6 +24,7 @@ export class PlayerController extends Behavior {
   start(): void {
     this._cc = this.getComponent(CharacterController);
     this._motion = this.body?.getComponent(Motion) ?? null;
+    this._audio = this.getComponent(AudioSource);
     if (!this.param) Debug.warn('PlayerController: no PlayerParam assigned, using defaults');
   }
 
@@ -37,6 +41,7 @@ export class PlayerController extends Behavior {
     if (grounded && Input.getKeyDown('Space')) {
       this._vy = Math.sqrt(2 * 9.81 * (this.param?.jumpHeight ?? 1.5));
       this._motion?.setTrigger('jump');
+      if (this.jumpSound) this._audio?.playOneShot(this.jumpSound, 0.5);
     }
     this._vy -= 9.81 * dt;
     const d = move.scale(speed * dt);
@@ -75,6 +80,7 @@ export class PlayerController extends Behavior {
     if (other.tag !== 'Coin') return;
     other.destroy();
     this._coins++;
+    if (this.coinSound) this._audio?.playOneShot(this.coinSound, 0.7);
     Debug.log(`Coin! (${this._coins})`);
   }
 

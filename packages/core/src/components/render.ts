@@ -1,5 +1,6 @@
 import { Component } from '../GameObject';
-import { Color3 } from '../math';
+import { Color3, Vector3 } from '../math';
+import { SceneManager, Screen } from '../SceneManager';
 import { field, Types } from '../reflection';
 
 /** Built-in components drawn by the renderer (render-babylon mirrors them every frame). */
@@ -29,6 +30,33 @@ export class Camera extends Component {
   clearColor = new Color3(0.16, 0.17, 0.2);
   /** The camera the game draws through (the first enabled main camera). */
   main = true;
+
+  /** World ray through a game-view point (CSS pixels from the top-left, like Input.mouseX / mouseY). */
+  screenPointToRay(x: number, y: number): { origin: Vector3; direction: Vector3 } {
+    const t = Math.tan((this.fov * Math.PI) / 360);
+    const nx = (x / Screen.width) * 2 - 1;
+    const ny = 1 - (y / Screen.height) * 2;
+    const m = this.transform.worldMatrix;
+    const direction = Vector3.TransformNormal(new Vector3(nx * t * Screen.aspect, ny * t, 1), m).normalize();
+    return { origin: this.transform.position, direction };
+  }
+
+  /** Game-view point (CSS pixels) of a world position, and whether it is in front of the camera. */
+  worldToScreenPoint(p: Vector3): { x: number; y: number; visible: boolean } {
+    const inv = this.transform.worldMatrix.clone().invert();
+    const v = Vector3.TransformCoordinates(p, inv);
+    const t = Math.tan((this.fov * Math.PI) / 360);
+    const nx = v.x / (v.z * t * Screen.aspect);
+    const ny = v.y / (v.z * t);
+    return { x: ((nx + 1) / 2) * Screen.width, y: ((1 - ny) / 2) * Screen.height, visible: v.z > 0 };
+  }
+
+  /** The camera the game draws through (first enabled main camera of an active object). */
+  static get main(): Camera | null {
+    const s = SceneManager.active;
+    if (!s) return null;
+    return s.findComponents(Camera).find((c) => c.enabled && c.main && c.gameObject.activeInHierarchy) ?? null;
+  }
 }
 
 export class DirectionalLight extends Component {

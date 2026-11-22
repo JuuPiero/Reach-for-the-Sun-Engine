@@ -245,6 +245,16 @@ const SHELVES: { name: string; items: { label: string; icon: keyof typeof Icons;
     ],
   },
   {
+    name: 'UI / Audio',
+    items: [
+      { label: 'Text', icon: 'Text', kind: 'UIText' },
+      { label: 'Button', icon: 'Button', kind: 'UIButton' },
+      { label: 'Image', icon: 'Image', kind: 'UIImage' },
+      { label: 'Panel', icon: 'Panel', kind: 'UIPanel' },
+      { label: 'Sound', icon: 'Audio', kind: 'AudioSource' },
+    ],
+  },
+  {
     name: 'Asset',
     items: [
       { label: 'Script', icon: 'Script', action: () => void editor.createScript() },
