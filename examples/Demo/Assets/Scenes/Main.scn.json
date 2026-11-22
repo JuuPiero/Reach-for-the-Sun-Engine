@@ -1,0 +1,101 @@
+{
+  "format": 1,
+  "root": {
+    "name": "Root",
+    "folders": [
+      {
+        "name": "Environment",
+        "folders": [],
+        "gameObjects": [
+          {
+            "id": 1,
+            "name": "Sun",
+            "transform": { "p": [0, 10, 0], "r": [0.4082, 0.2346, -0.1094, 0.8754], "s": [1, 1, 1] },
+            "components": [{ "type": "DirectionalLight", "fields": { "color": [1, 0.96, 0.88], "intensity": 1.6, "shadows": true } }],
+            "children": []
+          },
+          {
+            "id": 2,
+            "name": "Ambient",
+            "transform": { "p": [0, 0, 0], "r": [0, 0, 0, 1], "s": [1, 1, 1] },
+            "components": [{ "type": "AmbientLight", "fields": { "skyColor": [0.7, 0.78, 0.92], "groundColor": [0.3, 0.26, 0.22], "intensity": 0.55 } }],
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Ground",
+            "transform": { "p": [0, 0, 0], "r": [0, 0, 0, 1], "s": [30, 1, 30] },
+            "components": [{ "type": "Mesh", "fields": { "shape": "Ground", "color": [0.42, 0.46, 0.5], "specular": 0.05, "castShadows": false } }],
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "Player",
+        "folders": [],
+        "gameObjects": [
+          {
+            "id": 10,
+            "name": "Player",
+            "tag": "Player",
+            "transform": { "p": [0, 1, 0], "r": [0, 0, 0, 1], "s": [1, 1, 1] },
+            "components": [
+              { "type": "Mesh", "fields": { "shape": "Capsule", "color": [0.2, 0.45, 0.95], "specular": 0.4 } },
+              { "type": "PlayerController", "fields": { "param": "Assets/UserData/PlayerParam.user.json", "followCamera": 20, "cameraOffset": [0, 6, -9] } }
+            ],
+            "children": [
+              {
+                "id": 11,
+                "name": "Visor",
+                "transform": { "p": [0, 0.5, 0.42], "r": [0, 0, 0, 1], "s": [0.6, 0.2, 0.2] },
+                "components": [{ "type": "Mesh", "fields": { "shape": "Box", "color": [0.1, 0.9, 1], "emissive": [0, 0.5, 0.6] } }],
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": 20,
+            "name": "MainCamera",
+            "transform": { "p": [0, 7, -9], "r": [0.2588, 0, 0, 0.9659], "s": [1, 1, 1] },
+            "components": [{ "type": "Camera", "fields": { "fov": 55, "clearColor": [0.5, 0.65, 0.85] } }],
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "Gimmick",
+        "folders": [],
+        "gameObjects": [
+          {
+            "id": 30,
+            "name": "Spinner_A",
+            "transform": { "p": [-5, 1, 4], "r": [0, 0, 0, 1], "s": [1.5, 1.5, 1.5] },
+            "components": [
+              { "type": "Mesh", "fields": { "shape": "Box", "color": [0.95, 0.35, 0.25] } },
+              { "type": "Rotator", "fields": { "speed": [30, 60, 0] } }
+            ],
+            "children": []
+          },
+          {
+            "id": 31,
+            "name": "Spinner_B",
+            "transform": { "p": [5, 1.5, 5], "r": [0, 0, 0, 1], "s": [1, 1, 1] },
+            "components": [
+              { "type": "Mesh", "fields": { "shape": "Sphere", "color": [0.35, 0.85, 0.4], "specular": 0.6 } },
+              { "type": "Rotator", "fields": { "speed": [0, 0, 0], "bobHeight": 0.5, "bobSpeed": 2 } }
+            ],
+            "children": []
+          },
+          {
+            "id": 32,
+            "name": "CoinSpawner",
+            "transform": { "p": [0, 0, 6], "r": [0, 0, 0, 1], "s": [1, 1, 1] },
+            "components": [{ "type": "Spawner", "fields": { "prefab": "Assets/Prefabs/Coin.pfb.json", "interval": 1.5, "maxCount": 6, "radius": 7 } }],
+            "children": []
+          }
+        ]
+      }
+    ],
+    "gameObjects": []
+  }
+}

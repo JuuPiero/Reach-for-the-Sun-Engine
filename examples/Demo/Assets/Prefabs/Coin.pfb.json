@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "gameObject": {
+    "id": 1,
+    "name": "Coin",
+    "tag": "Coin",
+    "transform": { "p": [0, 0.8, 0], "r": [0, 0, 0, 1], "s": [0.7, 0.7, 0.7] },
+    "components": [
+      { "type": "Mesh", "fields": { "shape": "Torus", "color": [1, 0.78, 0.15], "emissive": [0.25, 0.15, 0], "specular": 0.8 } },
+      { "type": "Rotator", "fields": { "speed": [0, 180, 0], "bobHeight": 0.15, "bobSpeed": 3 } }
+    ],
+    "children": []
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "type": "PlayerParam",
+  "fields": {
+    "moveSpeed": 6,
+    "turnSpeed": 540,
+    "jumpHeight": 1.5
+  }
+}

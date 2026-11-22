@@ -1,0 +1,30 @@
+{
+  "name": "rs-engine",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "RS Engine (Reach for the Sun) - a web game engine with an RE-Engine-style workflow, rendering through Babylon.js.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "editor": "node scripts/rs.mjs editor",
+    "build:game": "node scripts/rs.mjs build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node scripts/test.mjs"
+  },
+  "dependencies": {
+    "@babylonjs/core": "9.37.1",
+    "@babylonjs/loaders": "9.37.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "esbuild": "^0.25.0",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.7"
+  }
+}
