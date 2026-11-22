@@ -117,7 +117,8 @@
                     0.5
                   ],
                   "specular": 0.05,
-                  "castShadows": false
+                  "castShadows": false,
+                  "material": "Assets/Materials/Floor.mat.json"
                 }
               },
               {
@@ -134,6 +135,64 @@
                     1,
                     1
                   ]
+                }
+              }
+            ],
+            "children": []
+          },
+          {
+            "id": 4,
+            "name": "Environment",
+            "transform": {
+              "p": [
+                0,
+                0,
+                0
+              ],
+              "r": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "s": [
+                1,
+                1,
+                1
+              ]
+            },
+            "components": [
+              {
+                "type": "Environment",
+                "fields": {
+                  "sky": "Gradient",
+                  "skyTop": [
+                    0.22,
+                    0.42,
+                    0.8
+                  ],
+                  "skyHorizon": [
+                    0.74,
+                    0.84,
+                    0.95
+                  ],
+                  "skyBottom": [
+                    0.4,
+                    0.38,
+                    0.36
+                  ],
+                  "fog": "Linear",
+                  "fogColor": [
+                    0.74,
+                    0.84,
+                    0.95
+                  ],
+                  "fogStart": 25,
+                  "fogEnd": 70,
+                  "toneMapping": "ACES",
+                  "exposure": 1.15,
+                  "contrast": 1.1,
+                  "fxaa": true
                 }
               }
             ],
@@ -195,7 +254,8 @@
                   ],
                   "runMultiplier": 2,
                   "jumpSound": "Assets/Sounds/Jump.wav",
-                  "coinSound": "Assets/Sounds/Coin.wav"
+                  "coinSound": "Assets/Sounds/Coin.wav",
+                  "coinBurst": 12
                 }
               },
               {
@@ -242,6 +302,68 @@
                       "clip": "Idle",
                       "crossFade": 0.2,
                       "updateInEdit": true
+                    }
+                  }
+                ],
+                "children": []
+              },
+              {
+                "id": 12,
+                "name": "CoinBurst",
+                "transform": {
+                  "p": [
+                    0,
+                    1.2,
+                    0
+                  ],
+                  "r": [
+                    0,
+                    0,
+                    0,
+                    1
+                  ],
+                  "s": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                "components": [
+                  {
+                    "type": "ParticleSystem",
+                    "fields": {
+                      "playOnStart": false,
+                      "loop": false,
+                      "rate": 0,
+                      "maxParticles": 120,
+                      "lifetimeMin": 0.4,
+                      "lifetimeMax": 0.9,
+                      "speedMin": 2,
+                      "speedMax": 4.5,
+                      "sizeMin": 0.2,
+                      "sizeMax": 0.4,
+                      "endSize": 0.3,
+                      "startColor": [
+                        1,
+                        0.9,
+                        0.4
+                      ],
+                      "endColor": [
+                        1,
+                        0.5,
+                        0.1
+                      ],
+                      "gravity": [
+                        0,
+                        -7,
+                        0
+                      ],
+                      "shape": "Sphere",
+                      "radius": 0.2,
+                      "texture": "Assets/Textures/Sparkle.png",
+                      "blend": "Additive",
+                      "spin": 180,
+                      "simulateInEdit": false
                     }
                   }
                 ],
@@ -324,7 +446,8 @@
                     0.66,
                     0.46,
                     0.26
-                  ]
+                  ],
+                  "material": "Assets/Materials/Crate.mat.json"
                 }
               },
               {
@@ -369,7 +492,8 @@
                     0.66,
                     0.46,
                     0.26
-                  ]
+                  ],
+                  "material": "Assets/Materials/Crate.mat.json"
                 }
               },
               {
@@ -414,7 +538,8 @@
                     0.7,
                     0.5,
                     0.3
-                  ]
+                  ],
+                  "material": "Assets/Materials/Crate.mat.json"
                 }
               },
               {
@@ -459,7 +584,8 @@
                     0.62,
                     0.43,
                     0.24
-                  ]
+                  ],
+                  "material": "Assets/Materials/Crate.mat.json"
                 }
               },
               {
@@ -504,7 +630,8 @@
                     0.7,
                     0.48,
                     0.28
-                  ]
+                  ],
+                  "material": "Assets/Materials/Crate.mat.json"
                 }
               },
               {
@@ -762,7 +889,8 @@
                     0.95,
                     0.35,
                     0.25
-                  ]
+                  ],
+                  "material": "Assets/Materials/Metal.mat.json"
                 }
               },
               {

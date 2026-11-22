@@ -240,6 +240,7 @@ export class Scene {
           }
         }
     this.playing = false;
+    Debug._clearLines();
     this._toStart.length = 0;
     this._toDestroy.length = 0;
     this._physicsTime = 0;
@@ -255,6 +256,7 @@ export class Scene {
     if (!this.playing) return;
     Application._tick(dt);
     Input._beginFrame();
+    Debug._beginFrame();
     const runs = (c: Component) => c.enabled && !c.gameObject._destroyed && c.gameObject.activeInHierarchy;
     if (this._toStart.length) {
       const list = this._toStart.splice(0);

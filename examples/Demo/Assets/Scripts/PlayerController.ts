@@ -1,16 +1,20 @@
-import { Application, AudioSource, Behavior, CharacterController, Debug, Input, Motion, Quaternion, Vector3, field, type GameObject } from '@rs/core';
+import { Application, AudioSource, Behavior, Color3, ParticleSystem, CharacterController, Debug, Input, Motion, Quaternion, Vector3, field, type GameObject } from '@rs/core';
 import type { PlayerParam } from './PlayerParam';
 
 /**
  * Third-person movement: WASD / arrows walk (Shift = run), Space jumps. Moves with the CharacterController, turns towards the
  * movement, drives the body's Motion FSM (speed / grounded / jump) and collects coins (trigger colliders tagged "Coin").
  */
+const DIR_COLOR = new Color3(1, 0.6, 0.1);
+
 export class PlayerController extends Behavior {
   @field({ type: 'userdata', userDataType: 'PlayerParam' }) param: PlayerParam | null = null;
   /** Camera that follows the player (optional). */
   @field({ type: 'gameobject' }) followCamera: GameObject | null = null;
   /** Child with the model + Motion (turned towards the movement). */
   @field({ type: 'gameobject' }) body: GameObject | null = null;
+  /** Particle effect played when a coin is collected (optional). */
+  @field({ type: 'gameobject' }) coinBurst: GameObject | null = null;
   cameraOffset = new Vector3(0, 6, -9);
   @field({ min: 1, step: 0.5 }) runMultiplier = 2;
   @field({ type: 'asset', assetKind: ['wav', 'mp3', 'ogg'], header: 'Sounds' }) jumpSound = '';
@@ -59,6 +63,8 @@ export class PlayerController extends Behavior {
       this.body.transform.markDirty();
     }
     this._motion?.setFloat('speed', move.length() * speed);
+    // debug: movement direction (drawn in the editor's view)
+    if (move.lengthSquared() > 0.01) Debug.drawRay(this.transform.position.add(new Vector3(0, 0.2, 0)), move.scale(1.5), DIR_COLOR);
     this._motion?.setBool('grounded', this._cc?.isGrounded ?? true);
     // fell off the world
     if (this.transform.position.y < -20) {
@@ -81,6 +87,7 @@ export class PlayerController extends Behavior {
     other.destroy();
     this._coins++;
     if (this.coinSound) this._audio?.playOneShot(this.coinSound, 0.7);
+    this.coinBurst?.getComponent(ParticleSystem)?.emit(30);
     Debug.log(`Coin! (${this._coins})`);
   }
 

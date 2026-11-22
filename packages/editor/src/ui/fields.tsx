@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react';
-import { Assets, Color3, Debug, GameObject, Types, Vector3, niceName, type FieldInfo, type UserData } from '@rs/core';
+import { Assets, Color3, Debug, GameObject, Types, Vector3, niceName, userDataExt, type FieldInfo, type UserData } from '@rs/core';
 import { editor } from '../editor/Editor';
 import { DT_ASSET } from './Hierarchies';
 
@@ -253,7 +253,7 @@ export function FieldRow({ target, f, others = [] }: { target: object; f: FieldI
       control = (
         <AssetInput
           value={(v as UserData | null)?.path ?? ''}
-          exts={['.user.json']}
+          exts={f.userDataType ? [userDataExt(f.userDataType)] : ['.user.json']}
           onChange={(p) => {
             if (!p) return set(null);
             void Assets.loadUserData(p).then((u) => {

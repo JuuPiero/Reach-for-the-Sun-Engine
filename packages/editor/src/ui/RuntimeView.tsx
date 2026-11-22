@@ -15,7 +15,7 @@ import '@babylonjs/core/Rendering/outlineRenderer';
 import { AmbientLight, Camera, CharacterController, Collider, DirectionalLight, Motion, PointLight, SpotLight, type GameObject } from '@rs/core';
 import { BabylonBackend } from '@rs/render-babylon';
 import { UIRenderer } from '../../../runtime/src/UIRenderer';
-import { Screen } from '@rs/core';
+import { Application, Assets, Screen } from '@rs/core';
 import { editor } from '../editor/Editor';
 import { DT_ASSET } from './Hierarchies';
 import { useEditor } from './hooks';
@@ -294,7 +294,12 @@ export function RuntimeView() {
         const d = ray.intersectsPlane(Plane.FromPositionAndNormal(Vector3.Zero(), Vector3.Up()));
         point = d !== null && d > 0 ? ray.origin.add(ray.direction.scale(d)) : editor.spawnPoint();
       }
-      if (path.endsWith('.pfb.json')) void editor.instantiatePrefab(path, null, point);
+      if (path.endsWith('.mat.json')) {
+        // material onto the object under the mouse
+        const go = backend.pick(e.clientX - r.left, e.clientY - r.top);
+        const mesh = go?.getComponent<import('@rs/core').Mesh>('Mesh');
+        if (mesh) void Assets.loadUserData(path).then((u) => u && editor.setField(mesh, 'material', u, false));
+      } else if (path.endsWith('.pfb.json')) void editor.instantiatePrefab(path, null, point);
       else if (/\.(glb|gltf)$/i.test(path)) {
         const go = editor.create('Model');
         go.name = path.slice(path.lastIndexOf('/') + 1).replace(/\.\w+$/, '');
@@ -337,7 +342,14 @@ export function RuntimeView() {
         const v = new Vector3((keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0), (keys.has('KeyE') ? 1 : 0) - (keys.has('KeyQ') ? 1 : 0), (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0));
         if (v.lengthSquared() > 0) cam.position.addInPlace(Vector3.TransformNormal(v, m).scale(speed * dt * (keys.has('ShiftLeft') ? 3 : 1)));
       }
-      backend.sync(scene, { camera: editorView ? cam : null, defaultLight: editor.mode === 'edit' });
+      backend.sync(scene, {
+        camera: editorView ? cam : null,
+        defaultLight: editor.mode === 'edit',
+        playing: editor.mode !== 'edit',
+        timeScale: editor.mode === 'pause' ? 0 : editor.mode === 'play' ? Application.timeScale : 1,
+        dt,
+        debugLines: true,
+      });
       grid.setEnabled(editorView && gridRef.current);
       // markers for lights / cameras
       const seen = new Set<GameObject>();

@@ -4,11 +4,83 @@
     "id": 1,
     "name": "Coin",
     "tag": "Coin",
-    "transform": { "p": [0, 0.8, 0], "r": [0, 0, 0, 1], "s": [0.7, 0.7, 0.7] },
+    "transform": {
+      "p": [
+        0,
+        0.8,
+        0
+      ],
+      "r": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "s": [
+        0.7,
+        0.7,
+        0.7
+      ]
+    },
     "components": [
-      { "type": "Mesh", "fields": { "shape": "Torus", "color": [1, 0.78, 0.15], "emissive": [0.25, 0.15, 0], "specular": 0.8 } },
-      { "type": "Rotator", "fields": { "speed": [0, 180, 0], "bobHeight": 0.15, "bobSpeed": 3 } },
-      { "type": "Collider", "fields": { "shape": "Sphere", "radius": 0.8, "isTrigger": true } }
+      {
+        "type": "Mesh",
+        "fields": {
+          "shape": "Torus",
+          "material": "Assets/Materials/Gold.mat.json"
+        }
+      },
+      {
+        "type": "Rotator",
+        "fields": {
+          "speed": [
+            0,
+            180,
+            0
+          ],
+          "bobHeight": 0.15,
+          "bobSpeed": 3
+        }
+      },
+      {
+        "type": "Collider",
+        "fields": {
+          "shape": "Sphere",
+          "radius": 0.8,
+          "isTrigger": true
+        }
+      },
+      {
+        "type": "ParticleSystem",
+        "fields": {
+          "rate": 5,
+          "maxParticles": 40,
+          "lifetimeMin": 0.5,
+          "lifetimeMax": 1,
+          "speedMin": 0.2,
+          "speedMax": 0.5,
+          "sizeMin": 0.15,
+          "sizeMax": 0.3,
+          "endSize": 0.2,
+          "startColor": [
+            1,
+            0.95,
+            0.6
+          ],
+          "endColor": [
+            1,
+            0.7,
+            0.2
+          ],
+          "startAlpha": 1,
+          "endAlpha": 0,
+          "shape": "Sphere",
+          "radius": 0.6,
+          "texture": "Assets/Textures/Sparkle.png",
+          "blend": "Additive",
+          "spin": 90
+        }
+      }
     ],
     "children": []
   }

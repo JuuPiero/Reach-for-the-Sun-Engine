@@ -241,7 +241,7 @@ function ComponentView({ c, others }: { c: Component; others: Component[] }) {
       {c instanceof MissingComponent ? (
         <div className="rs-hint">The script defining '{c.typeName}' is missing or does not compile; its data is kept.</div>
       ) : (
-        editor.fieldsOf(c).filter((f) => !f.hidden).map((f) => <FieldRow key={f.name} target={c} f={f} others={others} />)
+        editor.fieldsOf(c).filter((f) => !f.hidden && (!f.visibleIf || f.visibleIf(c))).map((f) => <FieldRow key={f.name} target={c} f={f} others={others} />)
       )}
     </Section>
   );
@@ -260,14 +260,14 @@ function AssetInspector({ path }: { path: string }) {
       <span className="rs-asset-name">{path}</span>
     </div>
   );
-  if (v.kind === 'UserData') {
+  if (v.kind === 'UserData' || v.kind === 'Material') {
     const u = editor.editedUserData;
     return (
       <>
         {head}
         {u ? (
           <Section title={Types.nameOf(u.constructor)}>
-            {editor.fieldsOf(u).filter((f) => !f.hidden).map((f) => <FieldRow key={f.name} target={u} f={f} />)}
+            {editor.fieldsOf(u).filter((f) => !f.hidden && (!f.visibleIf || f.visibleIf(u))).map((f) => <FieldRow key={f.name} target={u} f={f} />)}
             <div className="rs-hint">Changes are saved to the file.</div>
           </Section>
         ) : (

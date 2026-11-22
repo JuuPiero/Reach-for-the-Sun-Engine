@@ -47,9 +47,10 @@ export function AssetBrowser() {
     { label: 'Scene', action: () => void editor.createSceneAsset(dir).then((p) => setRenaming(p)) },
     { label: 'Script (Behavior)', action: () => void editor.createScript(dir).then((p) => setRenaming(p)) },
     { label: 'Motion FSM', action: () => void editor.createFsm(dir).then((p) => setRenaming(p)) },
+    { label: 'Material', action: () => void editor.createUserData('Material', dir).then((p) => p && setRenaming(p)) },
     {
       label: 'UserData',
-      submenu: editor.userDataTypes().length ? editor.userDataTypes().map((t) => ({ label: t.name, action: () => void editor.createUserData(t.name, dir) })) : [{ label: '(no UserData class in the scripts)', disabled: true }],
+      submenu: editor.userDataTypes().length ? editor.userDataTypes().filter((t) => !t.options.fileExt).map((t) => ({ label: t.name, action: () => void editor.createUserData(t.name, dir) })) : [{ label: '(no UserData class in the scripts)', disabled: true }],
     },
   ];
 
@@ -244,7 +245,7 @@ export function AssetBrowser() {
                       }}
                     />
                   ) : (
-                    <div className="rs-tile-name">{baseName(f.path).replace(/\.(scn|pfb|user|fsm)\.json$/, '')}</div>
+                    <div className="rs-tile-name">{baseName(f.path).replace(/\.(scn|pfb|user|fsm|mat)\.json$/, '')}</div>
                   )}
                 </div>
               );

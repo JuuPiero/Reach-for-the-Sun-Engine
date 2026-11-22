@@ -2,22 +2,28 @@ import { Component } from '../GameObject';
 import { Color3, Vector3 } from '../math';
 import { SceneManager, Screen } from '../SceneManager';
 import { field, Types } from '../reflection';
+import type { Material } from '../Material';
 
 /** Built-in components drawn by the renderer (render-babylon mirrors them every frame). */
 
 export const MESH_SHAPES = ['Box', 'Sphere', 'Cylinder', 'Capsule', 'Plane', 'Ground', 'Torus', 'Model'] as const;
 export type MeshShape = (typeof MESH_SHAPES)[number];
 
+/** Inline surface fields: primitives without a Material asset. */
+const inline = (m: Mesh) => !m.material && m.shape !== 'Model';
+
 export class Mesh extends Component {
   @field({ type: 'enum', options: MESH_SHAPES }) shape: MeshShape = 'Box';
   /** glTF / GLB file (shape = Model). */
-  @field({ type: 'asset', assetKind: ['glb', 'gltf'] }) model = '';
-  @field({ header: 'Material' }) color = new Color3(0.8, 0.8, 0.8);
-  @field({ type: 'asset', assetKind: ['png', 'jpg', 'jpeg', 'webp'] }) texture = '';
+  @field({ type: 'asset', assetKind: ['glb', 'gltf'], visibleIf: (m: Mesh) => m.shape === 'Model' }) model = '';
+  /** Material asset (`.mat.json`); when set it replaces the colour / texture below (and a model's own materials). */
+  @field({ type: 'userdata', userDataType: 'Material', header: 'Material' }) material: Material | null = null;
+  @field({ visibleIf: inline }) color = new Color3(0.8, 0.8, 0.8);
+  @field({ type: 'asset', assetKind: ['png', 'jpg', 'jpeg', 'webp'], visibleIf: inline }) texture = '';
   /** Texture repeat (UV scale). */
-  @field({ min: 0.01, step: 0.1 }) tiling = 1;
-  emissive = new Color3(0, 0, 0);
-  @field({ min: 0, max: 1, step: 0.01 }) specular = 0.2;
+  @field({ min: 0.01, step: 0.1, visibleIf: inline }) tiling = 1;
+  @field({ visibleIf: inline }) emissive = new Color3(0, 0, 0);
+  @field({ min: 0, max: 1, step: 0.01, visibleIf: inline }) specular = 0.2;
   @field({ header: 'Shadows' }) castShadows = true;
   receiveShadows = true;
 }

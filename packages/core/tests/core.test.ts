@@ -57,8 +57,8 @@ test('fields: decorated + plain values, declaration order, privates skipped', ()
   const names = getFields(Spin).map((f) => `${f.name}:${f.type}`);
   assert.deepEqual(names, ['speed:vec3', 'target:gameobject', 'param:userdata', 'prefab:prefab', 'mode:enum']);
   assert.deepEqual(
-    getFields(Mesh).slice(0, 3).map((f) => f.name),
-    ['shape', 'model', 'color'],
+    getFields(Mesh).slice(0, 4).map((f) => f.name),
+    ['shape', 'model', 'material', 'color'],
   );
   assert.equal(Types.get('Spin')?.script, 'Assets/Scripts/Spin.ts');
   assert.equal(Types.get('Param')?.kind, 'userdata');

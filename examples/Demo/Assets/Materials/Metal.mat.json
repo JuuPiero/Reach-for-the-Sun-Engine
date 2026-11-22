@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "type": "Material",
+  "fields": {
+    "color": [
+      0.95,
+      0.35,
+      0.25
+    ],
+    "metallic": 1,
+    "roughness": 0.25
+  }
+}

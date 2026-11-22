@@ -39,6 +39,29 @@ export const Icons = {
       <path d="M2 5.5h12" />
     </I>
   ),
+  Material: (p: P) => (
+    <I {...p}>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M4.5 6.2a4 4 0 0 1 3-2.4" />
+      <circle cx="10" cy="10" r="1.2" />
+    </I>
+  ),
+  Particles: (p: P) => (
+    <I {...p}>
+      <path d="M8 14.5v-4M5 13l1.5-3.5M11 13l-1.5-3.5" />
+      <circle cx="8" cy="6.5" r="1.3" />
+      <circle cx="4" cy="4" r="0.9" />
+      <circle cx="12" cy="3.5" r="0.9" />
+      <circle cx="8" cy="2" r="0.7" />
+    </I>
+  ),
+  Environment: (p: P) => (
+    <I {...p}>
+      <path d="M1.5 11.5h13" />
+      <path d="M3 11.5a5 5 0 0 1 10 0" />
+      <path d="M2.5 14h3M7 14h6.5" />
+    </I>
+  ),
   Audio: (p: P) => (
     <I {...p}>
       <path d="M2 6v4h3l3.5 3v-10l-3.5 3z" />
@@ -310,6 +333,12 @@ export function objectIcon(kinds: string[]): (p: P) => JSX.Element {
   if (kinds.includes('SpotLight')) return Icons.Spot;
   if (kinds.includes('AmbientLight')) return Icons.Ambient;
   if (kinds.includes('Mesh')) return Icons.Cube;
+  if (kinds.includes('ParticleSystem')) return Icons.Particles;
+  if (kinds.includes('Environment')) return Icons.Environment;
+  if (kinds.includes('UIButton')) return Icons.Button;
+  if (kinds.includes('UIText')) return Icons.Text;
+  if (kinds.includes('UIPanel') || kinds.includes('UIImage')) return Icons.Panel;
+  if (kinds.includes('AudioSource') || kinds.includes('AudioListener')) return Icons.Audio;
   return Icons.Empty;
 }
 
@@ -321,6 +350,7 @@ export function assetVisual(path: string, dir: boolean): { icon: (p: P) => JSX.E
   if (p.endsWith('.pfb.json')) return { icon: Icons.Prefab, color: '#3fa7ff', kind: 'Prefab' };
   if (p.endsWith('.user.json')) return { icon: Icons.UserData, color: '#ff6fa6', kind: 'UserData' };
   if (p.endsWith('.fsm.json')) return { icon: Icons.Fsm, color: '#ff5d73', kind: 'MotionFsm' };
+  if (p.endsWith('.mat.json')) return { icon: Icons.Material, color: '#ffb347', kind: 'Material' };
   if (p.endsWith('.ts')) return { icon: Icons.Script, color: '#62d26f', kind: 'Script' };
   if (/\.(glb|gltf)$/.test(p)) return { icon: Icons.Model, color: '#4fd1c5', kind: 'Model' };
   if (/\.(png|jpe?g|webp)$/.test(p)) return { icon: Icons.Image, color: '#e7c35a', kind: 'Texture' };

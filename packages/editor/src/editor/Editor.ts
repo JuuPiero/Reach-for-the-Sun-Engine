@@ -31,6 +31,8 @@ import {
   SaveData,
   SceneManager,
   loadScene,
+  isUserDataPath,
+  userDataExt,
   emptyFsm,
   type MotionFsmData,
   type Component,
@@ -50,7 +52,7 @@ import { initPhysics } from 'virtual:rs/physics';
 export type EditorEvent = 'scene' | 'selection' | 'inspector' | 'mode' | 'files' | 'dirty' | 'log' | 'gizmo';
 export type PlayMode = 'edit' | 'play' | 'pause';
 export type GizmoMode = 'move' | 'rotate' | 'scale';
-export type CreateKind = 'Empty' | MeshShape | 'DirectionalLight' | 'PointLight' | 'SpotLight' | 'AmbientLight' | 'Camera' | 'UIText' | 'UIButton' | 'UIImage' | 'UIPanel' | 'AudioSource';
+export type CreateKind = 'Empty' | MeshShape | 'DirectionalLight' | 'PointLight' | 'SpotLight' | 'AmbientLight' | 'Camera' | 'UIText' | 'UIButton' | 'UIImage' | 'UIPanel' | 'AudioSource' | 'ParticleSystem' | 'Environment';
 
 interface UndoEntry {
   label: string;
@@ -134,7 +136,7 @@ export class Editor {
     const own = this.ownWrites.get(path);
     if (own && Date.now() - own < 1500) {
       this.ownWrites.delete(path);
-    } else if (kind === 'change' && (path.endsWith('.user.json') || path.endsWith('.pfb.json') || path.endsWith('.fsm.json'))) {
+    } else if (kind === 'change' && (isUserDataPath(path) || path.endsWith('.pfb.json') || path.endsWith('.fsm.json'))) {
       Assets.invalidate(path);
       if (path === this.selectedAsset) void this.selectAsset(path);
     } else if (kind === 'change' && path === this.scene.path) {
@@ -328,7 +330,7 @@ export class Editor {
     this.editedUserData = null;
     this.selection = [];
     this.selectedFolder = null;
-    if (path?.endsWith('.user.json')) this.editedUserData = await Assets.loadUserData(path);
+    if (path && isUserDataPath(path)) this.editedUserData = await Assets.loadUserData(path);
     if (path?.endsWith('.fsm.json')) await Assets.loadFsm(path);
     this.emit('selection', 'inspector');
   }
@@ -353,7 +355,7 @@ export class Editor {
     else if (kind === 'Camera') {
       go.addComponent(Camera).main = !this.scene.findComponents(Camera).length;
       if (!this.scene.findComponents(AudioListener).length) go.addComponent(AudioListener);
-    } else if (kind === 'AudioSource') go.addComponent(AudioSource);
+    } else if (kind === 'AudioSource' || kind === 'ParticleSystem' || kind === 'Environment') go.addComponent(kind);
     else if (kind === 'UIText' || kind === 'UIButton' || kind === 'UIImage' || kind === 'UIPanel') {
       const c = go.addComponent(kind);
       if (kind === 'UIPanel') (c as UIComponent).width = (c as UIComponent).height = 300;
@@ -674,7 +676,7 @@ export class ${finalName} extends Behavior {
     const t = Types.get(type);
     if (!t || t.kind !== 'userdata') return null;
     const u = new (t.ctor as new () => UserData)();
-    const p = this.freeAssetPath(dir, type, '.user.json');
+    const p = this.freeAssetPath(dir, type === 'Material' ? 'NewMaterial' : type, userDataExt(type));
     await this.write(p, serializeUserData(u));
     await this.refreshFiles();
     await this.selectAsset(p);

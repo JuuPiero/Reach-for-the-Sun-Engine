@@ -245,6 +245,14 @@ const SHELVES: { name: string; items: { label: string; icon: keyof typeof Icons;
     ],
   },
   {
+    name: 'Effects',
+    items: [
+      { label: 'Particles', icon: 'Particles', kind: 'ParticleSystem' },
+      { label: 'Environ.', icon: 'Environment', kind: 'Environment' },
+      { label: 'Material', icon: 'Material', action: () => void editor.createUserData('Material') },
+    ],
+  },
+  {
     name: 'UI / Audio',
     items: [
       { label: 'Text', icon: 'Text', kind: 'UIText' },

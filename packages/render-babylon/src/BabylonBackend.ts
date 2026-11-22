@@ -26,7 +26,12 @@ import type { AssetContainer } from '@babylonjs/core/assetContainer';
 import '@babylonjs/loaders/glTF';
 import '@babylonjs/core/Culling/ray';
 import { Color3, Color4, Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math';
-import { AmbientLight, Assets, Camera, DirectionalLight, Mesh, Motion, PointLight, SpotLight, type GameObject, type Scene } from '@rs/core';
+import { AmbientLight, Application, Assets, Camera, Debug, DirectionalLight, Environment, Mesh, Motion, ParticleSystem, PointLight, SpotLight, type GameObject, type Material as RSMaterial, type Scene } from '@rs/core';
+import type { Material as BMaterial } from '@babylonjs/core/Materials/material';
+import { MaterialCache } from './materials';
+import { EnvironmentRenderer } from './environment';
+import { syncParticles, type ParticleEntry } from './particles';
+import { DebugLineRenderer } from './debugLines';
 import type { AnimationGroup } from '@babylonjs/core/Animations/animationGroup';
 import '@babylonjs/core/Animations/animatable';
 
@@ -45,11 +50,14 @@ interface MeshEntry {
   /** Animation clips of a model (paused; driven by a Motion component). */
   anims: Map<string, { group: AnimationGroup; fps: number; from: number; length: number }>;
   clipsReported: object | null;
+  /** A model's own materials (restored when its Material override is cleared). */
+  ownMaterials: Map<AbstractMesh, BMaterial | null> | null;
 }
 interface Entry {
   node: TransformNode;
   gen: number;
   mesh?: MeshEntry;
+  particles?: ParticleEntry;
   light?: { comp: object; light: Light; shadows: ShadowGenerator | null };
   camera?: { comp: Camera; camera: FreeCamera };
 }
@@ -59,6 +67,14 @@ export interface SyncOptions {
   camera?: BCamera | null;
   /** Light the view when the scene has no light (editor). */
   defaultLight?: boolean;
+  /** Play mode (particle systems follow their play state); false = edit preview. Default true. */
+  playing?: boolean;
+  /** Simulation speed of particles (default Application.timeScale; the paused editor passes 0). */
+  timeScale?: number;
+  /** Frame time for edit previews (seconds). */
+  dt?: number;
+  /** Draw Debug.drawLine lines (default Debug.showLines). */
+  debugLines?: boolean;
 }
 
 export class BabylonBackend {
@@ -67,7 +83,9 @@ export class BabylonBackend {
   private readonly entries = new Map<GameObject, Entry>();
   private gen = 0;
   private readonly containers = new Map<string, Promise<AssetContainer | null>>();
-  private readonly textures = new Map<string, Texture>();
+  private readonly materials: MaterialCache;
+  private readonly environment: EnvironmentRenderer;
+  private readonly debugLines: DebugLineRenderer;
   private readonly fallbackCamera: FreeCamera;
   private defaultLight: HemisphericLight | null = null;
   /** Main camera of the scene in the last sync (play view), null if none. */
@@ -81,6 +99,9 @@ export class BabylonBackend {
     this.scene.useRightHandedSystem = false;
     this.fallbackCamera = new FreeCamera('__fallback', new Vector3(0, 2, -8), this.scene);
     this.fallbackCamera.setTarget(Vector3.Zero());
+    this.materials = new MaterialCache(this.scene);
+    this.environment = new EnvironmentRenderer(this.scene);
+    this.debugLines = new DebugLineRenderer(this.scene);
   }
 
   /** The node mirroring a GameObject (gizmos attach to it). */
@@ -98,6 +119,9 @@ export class BabylonBackend {
     let lights = 0;
     this.mainCamera = null;
     let clear: Color3 | null = null;
+    let env: Environment | null = null;
+    this.materials.beginFrame();
+    const pf = { playing: opts.playing ?? true, timeScale: opts.timeScale ?? Application.timeScale, dt: opts.dt ?? Application.unscaledDeltaTime, texture: (p: string) => this.materials.texture(p) };
     const shadowGens: ShadowGenerator[] = [];
     const casters: AbstractMesh[] = [];
     const receivers: AbstractMesh[] = [];
@@ -157,6 +181,16 @@ export class BabylonBackend {
         e.camera.camera.dispose();
         e.camera = undefined;
       }
+      const ps = go.getComponent(ParticleSystem);
+      if (ps) e.particles = syncParticles(this.scene, e.node, ps, e.particles, visible && ps.enabled, pf);
+      else if (e.particles) {
+        e.particles.ps.dispose(false);
+        e.particles = undefined;
+      }
+      if (!env) {
+        const en = go.getComponent(Environment);
+        if (en?.enabled && active) env = en;
+      }
     }
     // parents (after every node exists)
     for (const [go, e] of this.entries) {
@@ -181,8 +215,9 @@ export class BabylonBackend {
     } else this.defaultLight?.setEnabled(false);
     const camera = opts.camera ?? this.mainCamera ?? this.fallbackCamera;
     if (this.scene.activeCamera !== camera) this.scene.activeCamera = camera;
-    const cc = clear ?? new Color3(0.16, 0.17, 0.2);
-    this.scene.clearColor = new Color4(cc.r, cc.g, cc.b, 1);
+    this.scene.clearColor = this.environment.sync(env, camera, clear ?? new Color3(0.16, 0.17, 0.2));
+    this.materials.prune();
+    this.debugLines.sync((opts.debugLines ?? Debug.showLines) ? Debug._lines : []);
     void receivers;
   }
 
@@ -207,7 +242,9 @@ export class BabylonBackend {
   }
 
   dispose(): void {
-    for (const t of this.textures.values()) t.dispose();
+    this.materials.dispose();
+    this.environment.dispose();
+    this.debugLines.dispose();
     this.scene.dispose();
     this.engine.dispose();
   }
@@ -220,7 +257,7 @@ export class BabylonBackend {
     if (!e.mesh) {
       const root = new TransformNode(`mesh:${go.id}`, this.scene);
       root.parent = e.node;
-      e.mesh = { key, root, meshes: [], material: null, loading: false, anims: new Map(), clipsReported: null };
+      e.mesh = { key, root, meshes: [], material: null, loading: false, anims: new Map(), clipsReported: null, ownMaterials: null };
       if (c.shape === 'Model') this.loadModel(go, e.mesh, c.model);
       else {
         const m = this.primitive(c.shape, `prim:${go.id}`);
@@ -232,18 +269,28 @@ export class BabylonBackend {
     const me = e.mesh;
     me.root.setEnabled(visible);
     this.syncMotion(me, go.getComponent(Motion));
-    if (c.shape !== 'Model') {
+    const asset = c.material as RSMaterial | null;
+    if (asset) {
+      // Material asset: shared Babylon material (models remember their own to restore later)
+      const mat = this.materials.get(asset);
+      if (c.shape === 'Model' && !me.ownMaterials) me.ownMaterials = new Map(me.meshes.map((m) => [m, m.material]));
+      for (const m of me.meshes) {
+        if (me.ownMaterials && !me.ownMaterials.has(m)) me.ownMaterials.set(m, m.material);
+        if (m.material !== mat) m.material = mat;
+      }
+    } else if (c.shape === 'Model') {
+      if (me.ownMaterials) {
+        for (const [m, own] of me.ownMaterials) m.material = own;
+        me.ownMaterials = null;
+      }
+    } else {
       if (!me.material) me.material = new StandardMaterial(`mat:${go.id}`, this.scene);
       const mat = me.material;
       mat.diffuseColor.copyFrom(c.color);
       mat.emissiveColor.copyFrom(c.emissive);
       mat.specularColor.set(c.specular, c.specular, c.specular);
-      const tex = c.texture ? this.texture(c.texture) : null;
+      const tex = c.texture ? this.materials.texture(c.texture, c.tiling) : null;
       if (mat.diffuseTexture !== tex) mat.diffuseTexture = tex;
-      if (tex) {
-        tex.uScale = c.tiling;
-        tex.vScale = c.tiling;
-      }
       for (const m of me.meshes) if (m.material !== mat) m.material = mat;
     }
   }
@@ -320,15 +367,6 @@ export class BabylonBackend {
       if (a.group.weight !== w) a.group.weight = w;
       if (layer) a.group.goToFrame(a.from + Math.min(layer.time, a.length) * a.fps);
     }
-  }
-
-  private texture(path: string): Texture {
-    let t = this.textures.get(path);
-    if (!t) {
-      t = new Texture(Assets.url(path), this.scene);
-      this.textures.set(path, t);
-    }
-    return t;
   }
 
   private disposeMesh(e: Entry): void {
@@ -412,6 +450,7 @@ export class BabylonBackend {
   private disposeEntry(go: GameObject, e: Entry): void {
     this.disposeMesh(e);
     this.disposeLight(e);
+    e.particles?.ps.dispose(false);
     e.camera?.camera.dispose();
     e.node.dispose();
     this.entries.delete(go);

@@ -103,3 +103,27 @@ parameters / states (renames follow into transitions / initial) / transitions / 
   Display follows `visibleInHierarchy` (`go.active` = update + draw).
 - **Input** additions: gamepads polled in `Input._beginFrame` (standard mapping, `GAMEPAD_BUTTONS`), pointer lock on the attached
   element. **SaveData**: localStorage keys `<namespace>:<key>` (namespace = project name; the editor uses `editor:<name>` so play sessions do not touch the game's saves).
+
+## 8. Looks: materials, environment, particles, debug lines (milestone 4)
+- **Material** (`core/src/Material.ts`) is a built-in UserData type registered with `fileExt: '.mat.json'` (`userDataExt`,
+  `isUserDataPath` in reflection.ts): loading, preloading (`Assets.preloadReferences`), the Inspector (UserData editing, saved
+  through `saveUserDataSoon`), field drop-downs (`exts` from the field's `userDataType`) and creation (`createUserData`) all reuse
+  the UserData paths. `Mesh.material` is a userdata field; `visibleIf` (new FieldOption) hides the inline surface fields.
+- render-babylon `materials.ts` (`MaterialCache`): one StandardMaterial per Material object, refreshed once per sync (`beginFrame` /
+  `prune`); metallic / roughness → diffuse scale, specular colour / power (no environment reflections). Textures are cached per
+  (path, tiling, alpha) — never set `uScale` on a shared texture. A model keeps its own materials in `MeshEntry.ownMaterials` while
+  overridden.
+- `environment.ts` (`EnvironmentRenderer`): sky dome = inside-out sphere (`infiniteDistance`, no fog, no depth write) with a 4×256
+  DynamicTexture gradient (rows run bottom → top of the sphere) or an equirect texture, as the *emissive texture* with emissiveColor
+  black (StandardMaterial adds emissiveColor + emissive texture) and `level` = intensity; scene fog; `imageProcessingConfiguration`
+  (tone mapping, exposure, contrast, vignette, applied by materials); `DefaultRenderingPipeline` (bloom / FXAA) only when enabled,
+  re-created when the drawn camera changes, `imageProcessingEnabled = false`.
+- `particles.ts`: one Babylon ParticleSystem per component, emitter = the GameObject's TransformNode, updated from the component
+  every sync (shape / size gradients re-created on signature change). Time: `updateSpeed = timeScale / 60` (Babylon ages particles
+  by updateSpeed × frame-time ratio → seconds). Emission: play mode follows `ParticleSystem._emitting` (component update tracks
+  duration / loop / bursts), edit mode previews when `simulateInEdit`. Bursts: `manualEmitCount = n` for one frame, then back to −1.
+  Dispose with `dispose(false)` — textures are shared (soft dot, cached files).
+- Debug lines: `Debug.drawLine` & co push into a frame-scoped list (`_beginFrame` in `Scene.step` drops duration-0 lines of past
+  frames and expired timed ones, `_clearLines` on `Scene.end`); `debugLines.ts` draws them as one LineSystem (updated in place
+  while the count is unchanged). `SyncOptions.debugLines` (editor true) / `Debug.showLines` (builds, default false).
+- `SyncOptions.playing / timeScale / dt`: the editor passes play state (pause → timeScale 0, edit → playing false).

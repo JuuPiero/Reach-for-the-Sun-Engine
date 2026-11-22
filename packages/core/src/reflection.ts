@@ -29,6 +29,9 @@ export interface FieldOptions {
   /** `string`: suggested values computed from the object (drawn as a drop-down, e.g. the clips of a model). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   choices?: (target: any) => readonly string[];
+  /** Drawn only when this returns true (e.g. options of the selected mode). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  visibleIf?: (target: any) => boolean;
 }
 
 export interface FieldInfo extends FieldOptions {
@@ -117,6 +120,19 @@ export interface TypeOptions {
   hidden?: boolean;
   /** Only one per GameObject. */
   single?: boolean;
+  /** UserData types: file extension of their assets (default `.user.json`; Material = `.mat.json`). */
+  fileExt?: string;
+}
+
+/** File extension of a UserData type's assets. */
+export function userDataExt(typeName: string | undefined): string {
+  return (typeName && Types.get(typeName)?.options.fileExt) || '.user.json';
+}
+/** Whether a project path is a UserData asset (`.user.json` or a type's own extension such as `.mat.json`). */
+export function isUserDataPath(path: string): boolean {
+  if (path.endsWith('.user.json')) return true;
+  for (const t of Types.all('userdata')) if (t.options.fileExt && path.endsWith(t.options.fileExt)) return true;
+  return false;
 }
 
 export interface TypeInfo {

@@ -1,4 +1,5 @@
 import { Debug } from './Debug';
+import { isUserDataPath } from './reflection';
 import { Prefab } from './Prefab';
 import type { PrefabJson, UserDataJson } from './serialization';
 import type { UserData } from './UserData';
@@ -20,6 +21,7 @@ export const ASSET_EXT = {
   prefab: '.pfb.json',
   userdata: '.user.json',
   fsm: '.fsm.json',
+  material: '.mat.json',
 } as const;
 
 export const Assets = {
@@ -116,12 +118,12 @@ export const Assets = {
     const refs = new Set<string>();
     const walk = (v: unknown) => {
       if (typeof v === 'string') {
-        if (v.endsWith(ASSET_EXT.userdata) || v.endsWith(ASSET_EXT.prefab) || v.endsWith(ASSET_EXT.fsm)) refs.add(v);
+        if (isUserDataPath(v) || v.endsWith(ASSET_EXT.prefab) || v.endsWith(ASSET_EXT.fsm)) refs.add(v);
       } else if (Array.isArray(v)) v.forEach(walk);
       else if (v && typeof v === 'object') Object.values(v).forEach(walk);
     };
     walk(doc);
-    await Promise.all([...refs].map((r) => (r.endsWith(ASSET_EXT.userdata) ? Assets.loadUserData(r) : r.endsWith(ASSET_EXT.fsm) ? Assets.loadFsm(r) : Assets.loadPrefab(r))));
+    await Promise.all([...refs].map((r) => (isUserDataPath(r) ? Assets.loadUserData(r) : r.endsWith(ASSET_EXT.fsm) ? Assets.loadFsm(r) : Assets.loadPrefab(r))));
   },
 
   /** Forgets cached files (the editor after a file changed on disk). */

@@ -154,13 +154,46 @@ cao 720 px (tự co giãn theo khung):
 - Camera: `Camera.main`, `camera.screenPointToRay(Input.mouseX, Input.mouseY)` (kết hợp `Physics.raycast` để click chọn vật),
   `camera.worldToScreenPoint(p)` (đặt UI theo vị trí 3D).
 
+## Material
+
+- AssetBrowser ▸ Create ▸ **Material** (hoặc Macro Shelf ▸ Effects ▸ Material) tạo file `.mat.json`. Chọn file để chỉnh trong
+  Inspector: màu, texture, Metallic, Roughness, Normal Map (+ độ mạnh), Tiling, Emission (màu, cường độ, texture), Blend (Opaque /
+  Cutout / Transparent / Additive), Opacity, Alpha Cutoff, Unlit, Double Sided. Sửa là mọi object dùng material đó đổi ngay.
+- Gán cho Mesh qua field **Material** (hoặc kéo file material thả lên object trong Runtime view). Khi có material, các field màu /
+  texture riêng của Mesh được ẩn; với model `.glb`, material thay cho material gốc của model (bỏ chọn là trở lại như cũ).
+- Script: `mesh.material.color = new Color3(1, 0, 0)` đổi màu cho mọi object dùng chung material đó.
+
+## Environment (trời, sương mù, hậu kỳ)
+
+Component **Environment** (Macro Shelf ▸ Effects ▸ Environ., mỗi scene một cái):
+- Sky: Camera Color (màu nền của camera), Gradient (Top / Horizon / Bottom), Texture (ảnh 360° equirectangular), Sky Intensity.
+- Fog: None / Linear (Start, End) / Exponential (Density), Fog Color — nên đặt cùng màu với Horizon.
+- Image: Tone Mapping (None / Standard / ACES), Exposure, Contrast, Vignette.
+- Post Processing: Bloom (Threshold, Weight), FXAA (khử răng cưa).
+
+## Particle
+
+Component **ParticleSystem** (Macro Shelf ▸ Effects ▸ Particles): Emission (Play On Start, Loop, Duration, Rate / giây, Burst lúc bắt
+đầu mỗi chu kỳ, Max Particles), Particle (Lifetime, Speed, Size min–max, End Size, màu + alpha đầu / cuối, Gravity, Spin), Shape
+(Point, Sphere, Hemisphere, Cone — hướng lên trục Y của object, Box), Rendering (texture — để trống là chấm tròn mờ, Additive / Alpha,
+Local Space). Trong editor particle chạy thử luôn khi edit (tắt bằng **Simulate In Edit**). Script: `ps.play()`, `ps.stop(clear)`,
+`ps.emit(30)` (bắn một loạt), `ps.isPlaying`, `ps.particleCount`.
+
+## Vẽ debug
+
+`Debug.drawLine(a, b, color?, duration?)`, `Debug.drawRay(origin, dir, …)`, `Debug.drawBox(center, size, …)`,
+`Debug.drawSphere(center, radius, …)`: đường kẻ vẽ đè lên scene (duration 0 = chỉ frame này, gọi mỗi frame). Editor luôn vẽ; game
+build chỉ vẽ khi `Debug.showLines = true`.
+
 ## Demo
 
 `examples/Demo`: scene **Main** (robot nhặt coin, HUD đếm coin + thời gian + kỷ lục lưu bằng SaveData, Esc / P mở menu pause với
-nút Resume / Title Screen, nhạc nền + tiếng nhảy / nhặt coin) và scene **Title** (camera xoay, nút Start / phím Enter). Âm thanh do
-`scripts/gen-demo-sounds.mjs` tạo ra.
+nút Resume / Title Screen, nhạc nền + tiếng nhảy / nhặt coin, bầu trời gradient + sương mù, material cho sàn / thùng / coin vàng,
+coin lấp lánh + hiệu ứng nổ hạt khi nhặt, tia debug hướng chạy trong editor) và scene **Title** (camera xoay, nút Start / phím
+Enter). Âm thanh / texture do `scripts/gen-demo-sounds.mjs` / `scripts/gen-demo-textures.mjs` tạo ra.
 
-## Giới hạn hiện tại (mốc 3)
+## Giới hạn hiện tại (mốc 4)
 
-Chưa có VFX, nhiều scene cùng lúc (additive), skinned mesh / root motion, layer va chạm; prefab chưa có override (đặt prefab = bản
-sao có ghi nguồn). Game dùng vật lý nặng thêm ~3,5 MB (Rapier bản nhúng WASM).
+Chưa có nhiều scene cùng lúc (additive), skinned mesh / root motion, layer va chạm; prefab chưa có override (đặt prefab = bản sao
+có ghi nguồn). Material dùng ánh sáng Blinn-Phong (Metallic / Roughness được quy đổi, chưa có phản chiếu môi trường). Game dùng vật
+lý nặng thêm ~3,5 MB (Rapier bản nhúng WASM).
