@@ -1,0 +1,26 @@
+# Testing RS Engine
+
+## Unit tests
+`node scripts/test.mjs [filter]` — bundles `packages/*/tests/*.test.ts` with esbuild (decorators, `@rs/*` → sources, Babylon bundled,
+other npm packages external) and runs `node --test`. `packages/core/tests/core.test.ts`: fields, transforms, scene round trip
+(folders, flags, references, MissingComponent), clone remapping, play lifecycle, asset preloading + prefab instantiation (fake fetch).
+
+## Headless Chrome driver
+Setup once: `cd scripts/e2e; npm install` (puppeteer-core; Chrome via `RS_CHROME` or the usual install paths).
+```powershell
+node scripts/e2e/driver.mjs http://localhost:5180/ <outPrefix> "wait|1000;evalfile|scripts/e2e/x.js;shot|after"
+```
+Steps: `wait`, `waitfor|expr`, `shot|name`, `click|css`, `clickxy|x,y`, `rclick`, `dblclick`, `drag|x1,y1,x2,y2` (mouse),
+`dragjs|file` (mouse drag between computed points), `dndjs|file` (HTML5 drag & drop), `key`, `hold|Key,ms`,
+`holduntil|Key,min,max,expr`, `evalfile|file`. Editor pages: set `RS_E2E_WAITUNTIL=load` (Vite keeps a socket open).
+Software WebGL (SwiftShader) runs ~25–40 FPS: wait for states, not fixed times.
+
+## Suites
+| What | How |
+|---|---|
+| Game build | `node scripts/rs.mjs build examples/Demo`, `node scripts/e2e/serve.mjs examples/Demo/Build/Web 5301`, driver on `http://localhost:5301/` with `evalfile|scripts/e2e/game-state.js` (scene, objects, coins, player position; hold `KeyW` to move) |
+| Editor (read-only) | `RS_NO_OPEN=1 node scripts/rs.mjs editor examples/Demo --port 5310`, `evalfile|scripts/e2e/editor-basic.js` (selection, field edit + undo / redo, create, add component, duplicate, play runs scripts + spawns prefabs, stop restores, folder ops) — nothing is saved |
+| Editor (writes files) | on a scratch copy only: `node scripts/rs.mjs create <scratch>`, editor on it, `evalfile|scripts/e2e/editor-files.js` (save, new script → live registration, edited script → scene rebuilt, UserData create / edit saved, prefab create / instantiate, asset rename / delete) |
+| Mouse | pick `clickxy` on an object, gizmo `drag` along the red arrow, Hierarchies `dndjs` (rows by `.rs-row[data-key="g:<id>"]`), Play button + `holduntil|KeyW` in the view, `scripts/e2e/probe.js` for the state |
+
+Stop the servers you start (kill only your PIDs) and delete scratch projects.

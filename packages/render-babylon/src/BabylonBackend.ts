@@ -83,6 +83,11 @@ export class BabylonBackend {
     return this.entries.get(go)?.node ?? null;
   }
 
+  /** Babylon meshes drawn for a GameObject's Mesh component (selection outlines). */
+  meshesOf(go: GameObject): AbstractMesh[] {
+    return this.entries.get(go)?.mesh?.meshes ?? [];
+  }
+
   sync(scene: Scene, opts: SyncOptions = {}): void {
     const gen = ++this.gen;
     let lights = 0;

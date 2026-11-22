@@ -12,6 +12,7 @@
 //                                          move|800,400;mdown|right;hold|w,500;move|900,400;mup|right)
 //   drag|x1,y1,x2,y2[,Shift+Alt[,button]]  (modifiers written ~Alt are pressed after the button went down)
 //   dragjs|path.js       real drag between points computed in the page (the file returns [x1,y1,x2,y2,mods?,button?])
+//   dndjs|path.js        HTML5 drag & drop between points computed in the page (Hierarchies rows, Asset Browser tiles)
 //   key|Control+z        hold|d,800       type|text (typed into the focused element)
 //   holduntil|w,1000,20000,js-expression  (holds a key until the expression is truthy, at least / at most ms)
 //   eval|js              evalfile|path.js (prints the JSON result; use files — shell quoting breaks inline JS)
@@ -120,7 +121,7 @@ await page.goto(url, { waitUntil: process.env.RS_E2E_WAITUNTIL || 'networkidle0'
       } else if (cmd === 'click') await page.click(arg);
       else if (cmd === 'clickxy' || cmd === 'rclick' || cmd === 'dblclick') {
         const [x, y] = arg.split(',').map(Number);
-        await page.mouse.click(x, y, { button: cmd === 'rclick' ? 'right' : 'left', clickCount: cmd === 'dblclick' ? 2 : 1 });
+        await page.mouse.click(x, y, { button: cmd === 'rclick' ? 'right' : 'left', count: cmd === 'dblclick' ? 2 : 1, clickCount: cmd === 'dblclick' ? 2 : 1 });
       } else if (cmd === 'move') {
         const [x, y] = arg.split(',').map(Number);
         await page.mouse.move(x, y, { steps: 4 });
@@ -138,6 +139,13 @@ await page.goto(url, { waitUntil: process.env.RS_E2E_WAITUNTIL || 'networkidle0'
         const r = await page.evaluate(fs.readFileSync(arg, 'utf8'));
         console.log('[dragjs]', JSON.stringify(r));
         if (Array.isArray(r) && r.length >= 4) await drag(+r[0], +r[1], +r[2], +r[3], r[4] ?? '', r[5] ?? 'left');
+      } else if (cmd === 'dndjs') {
+        // HTML5 drag & drop (dragstart / dragover / drop with a DataTransfer) between points computed in the page
+        const r = await page.evaluate(fs.readFileSync(arg, 'utf8'));
+        console.log('[dndjs]', JSON.stringify(r));
+        await page.setDragInterception(true);
+        await page.mouse.dragAndDrop({ x: +r[0], y: +r[1] }, { x: +r[2], y: +r[3] }, { delay: 50 });
+        await page.setDragInterception(false);
       } else if (cmd === 'key') {
         const keys = arg.split('+');
         for (const k of keys) await page.keyboard.down(k);

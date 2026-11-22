@@ -87,15 +87,22 @@ export function getFields(ctor: Function): FieldInfo[] {
       seen.add(f.name);
     }
   }
+  // declaration order: class fields are defined in source order on the instance (decorated ones without an initializer last)
+  let ordered = out;
   if (sample) {
+    ordered = [];
     for (const name of Object.keys(sample)) {
-      if (seen.has(name) || name.startsWith('_') || RESERVED.has(name)) continue;
-      const t = inferType(sample[name]);
-      if (t) out.push({ name, type: t });
+      const decl = out.find((f) => f.name === name);
+      if (decl) ordered.push(decl);
+      else if (!seen.has(name) && !name.startsWith('_') && !RESERVED.has(name)) {
+        const t = inferType(sample[name]);
+        if (t) ordered.push({ name, type: t });
+      }
     }
+    for (const f of out) if (!ordered.includes(f)) ordered.push(f);
   }
-  fieldCache.set(ctor, out);
-  return out;
+  fieldCache.set(ctor, ordered);
+  return ordered;
 }
 
 // ---- type registry ----------------------------------------------------------------------------------------------------

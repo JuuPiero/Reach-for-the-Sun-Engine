@@ -154,7 +154,12 @@ export function serializeGameObject(go: GameObject): GameObjectJson {
 }
 
 export function serializeComponent(c: Component): ComponentJson {
-  if (c instanceof MissingComponent && c.data) return { ...c.data, enabled: c.enabled };
+  if (c instanceof MissingComponent && c.data) {
+    const j: ComponentJson = { ...c.data };
+    if (c.enabled) delete j.enabled;
+    else j.enabled = false;
+    return j;
+  }
   const j: ComponentJson = { type: Types.nameOf(c.constructor), fields: writeFields(c) };
   if (!c.enabled) j.enabled = false;
   return j;
