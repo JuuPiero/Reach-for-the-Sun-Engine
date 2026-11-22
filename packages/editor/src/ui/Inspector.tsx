@@ -3,6 +3,7 @@ import { MissingComponent, Quaternion, Types, Vector3, eulerDegFromQuat, quatFro
 import { editor } from '../editor/Editor';
 import { assetVisual, Icons } from './icons';
 import { FieldRow, TextInput, Vec3Input } from './fields';
+import { FsmEditor } from './FsmEditor';
 import { useEditor, useTicker } from './hooks';
 import { MenuList, showContextMenu, type MenuItem } from './Menu';
 
@@ -86,11 +87,19 @@ function ObjectInspector({ go, count }: { go: GameObject; count: number }) {
     go[k] = v;
     editor.changed(true);
   };
-  const editT = (label: string, apply: () => void, final = true) => {
+  // transform edits apply to every selected object: only the axes changed on the first one are copied
+  const objs = editor.selectedObjects;
+  const multiT = (label: string, get: (g: GameObject) => Vector3, set: (g: GameObject, v: Vector3) => void) => (v: Vector3) => {
     editor.recordUndo(label, true);
-    apply();
-    editor.transformChanged(go);
-    void final;
+    const ref = get(go);
+    const axes = (['x', 'y', 'z'] as const).filter((k) => Math.abs(v[k] - ref[k]) > 1e-9);
+    for (const g of objs) {
+      const nv = get(g).clone();
+      for (const k of axes) nv[k] = v[k];
+      set(g, nv);
+      g.transform.markDirty();
+    }
+    editor.changed();
   };
   const worldEuler = eulerDegFromQuat(t.rotation);
   const localEuler = eulerDegFromQuat(t.localRotation);
@@ -144,13 +153,13 @@ function ObjectInspector({ go, count }: { go: GameObject; count: number }) {
         <div className="rs-field">
           <label>Position</label>
           <div className="rs-field-value">
-            <Vec3Input value={t.position} onChange={(v) => editT('Position', () => (t.position = v))} />
+            <Vec3Input value={t.position} onChange={multiT('Position', (g) => g.transform.position, (g, v) => (g.transform.position = v))} />
           </div>
         </div>
         <div className="rs-field">
           <label>Rotation</label>
           <div className="rs-field-value">
-            <Vec3Input value={worldEuler} step={1} onChange={(v) => editT('Rotation', () => (t.rotation = quatFromEulerDeg(v.x, v.y, v.z)))} />
+            <Vec3Input value={worldEuler} step={1} onChange={multiT('Rotation', (g) => eulerDegFromQuat(g.transform.rotation), (g, v) => (g.transform.rotation = quatFromEulerDeg(v.x, v.y, v.z)))} />
           </div>
         </div>
         <div className="rs-field">
@@ -164,19 +173,19 @@ function ObjectInspector({ go, count }: { go: GameObject; count: number }) {
         <div className="rs-field">
           <label>LocalPosition</label>
           <div className="rs-field-value">
-            <Vec3Input value={t.localPosition} onChange={(v) => editT('Position', () => t.localPosition.copyFrom(v))} />
+            <Vec3Input value={t.localPosition} onChange={multiT('Position', (g) => g.transform.localPosition, (g, v) => g.transform.localPosition.copyFrom(v))} />
           </div>
         </div>
         <div className="rs-field">
           <label>LocalRotation</label>
           <div className="rs-field-value">
-            <Vec3Input value={localEuler} step={1} onChange={(v) => editT('Rotation', () => quatFromEulerDeg(v.x, v.y, v.z, t.localRotation))} />
+            <Vec3Input value={localEuler} step={1} onChange={multiT('Rotation', (g) => eulerDegFromQuat(g.transform.localRotation), (g, v) => quatFromEulerDeg(v.x, v.y, v.z, g.transform.localRotation))} />
           </div>
         </div>
         <div className="rs-field">
           <label>LocalScale</label>
           <div className="rs-field-value">
-            <Vec3Input value={t.localScale} onChange={(v) => editT('Scale', () => t.localScale.copyFrom(v))} />
+            <Vec3Input value={t.localScale} onChange={multiT('Scale', (g) => g.transform.localScale, (g, v) => g.transform.localScale.copyFrom(v))} />
           </div>
         </div>
       </Section>
@@ -185,14 +194,19 @@ function ObjectInspector({ go, count }: { go: GameObject; count: number }) {
           Id {go.id} · {go.children.length} children · folder {go.folder?.path || 'Root'}
         </div>
       </Section>
-      {go.components.map((c, i) => (
-        <ComponentView key={`${go.id}:${i}:${Types.nameOf(c.constructor)}`} c={c} />
-      ))}
+      {go.components.map((c, i) => {
+        // the same component (type + rank among that type) on the other selected objects
+        const type = Types.nameOf(c.constructor);
+        const rank = go.components.slice(0, i).filter((x) => Types.nameOf(x.constructor) === type).length;
+        const others = objs.slice(1).flatMap((g) => g.components.filter((x) => Types.nameOf(x.constructor) === type)[rank] ?? []);
+        if (objs.length > 1 && others.length < objs.length - 1) return null; // not shared by every selected object
+        return <ComponentView key={`${go.id}:${i}:${type}`} c={c} others={others} />;
+      })}
     </>
   );
 }
 
-function ComponentView({ c }: { c: Component }) {
+function ComponentView({ c, others }: { c: Component; others: Component[] }) {
   const name = c instanceof MissingComponent ? `${c.typeName} (missing script)` : Types.nameOf(c.constructor);
   const info = Types.of(c.constructor);
   const menu = (e: React.MouseEvent) =>
@@ -227,7 +241,7 @@ function ComponentView({ c }: { c: Component }) {
       {c instanceof MissingComponent ? (
         <div className="rs-hint">The script defining '{c.typeName}' is missing or does not compile; its data is kept.</div>
       ) : (
-        editor.fieldsOf(c).filter((f) => !f.hidden).map((f) => <FieldRow key={f.name} target={c} f={f} />)
+        editor.fieldsOf(c).filter((f) => !f.hidden).map((f) => <FieldRow key={f.name} target={c} f={f} others={others} />)
       )}
     </Section>
   );
@@ -262,6 +276,13 @@ function AssetInspector({ path }: { path: string }) {
       </>
     );
   }
+  if (v.kind === 'MotionFsm')
+    return (
+      <>
+        {head}
+        <FsmEditor path={path} />
+      </>
+    );
   if (v.kind === 'Scene')
     return (
       <>

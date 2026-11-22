@@ -2,7 +2,7 @@
 //   ?scene=Assets/Scenes/Other.scn.json   start on another scene
 import 'virtual:rs/scripts';
 import { project } from 'virtual:rs/project';
-import { Assets } from '@rs/core';
+import { Application, Assets, Physics } from '@rs/core';
 import { Player } from './Player';
 
 Assets.baseUrl = './';
@@ -17,4 +17,4 @@ player.start(scene).then(
     console.error(e);
   },
 );
-(window as unknown as { __rs: unknown }).__rs = { player };
+(window as unknown as { __rs: unknown }).__rs = { player, core: { Physics, Application } };

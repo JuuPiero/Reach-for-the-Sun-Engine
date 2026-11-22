@@ -60,3 +60,25 @@ the clear colour). Entries not seen in a sync are disposed. `pick(x, y)` maps Ba
   (number with scrub / arrows / expressions, vec3, color, enum, asset / prefab / userdata dropdowns with drop targets, GameObject
   references), `AssetBrowser` (folder tree, breadcrumbs, tiles, create menu, favorites, drops: objects → prefab, tiles → move),
   `Console`.
+
+## 5. Physics (`packages/core/src/Physics.ts`, `components/physics.ts`, `packages/physics`)
+`Physics` (gravity, fixedDeltaTime 1/60, maxSubSteps 4, raycast / overlapSphere) forwards to the installed `PhysicsProvider`.
+`Scene.step` (play) accumulates time and runs per fixed step: `fixedUpdate` of runnable components → `provider.step(scene, dt)`.
+`RapierPhysics` keeps one Rapier World per scene: `sync` walks active objects — owner of a body = object with RigidBody /
+CharacterController, colliders without one attach to the nearest RigidBody ancestor (compound) or get a fixed body; collider shapes
+are computed in the owner's space with |scale| applied to sizes (box size × scale, sphere radius × max scale, capsule / cylinder
+radius × max(x, z), height × y); signature strings recreate changed bodies / colliders; kinematic → next kinematic pose, static /
+character → setTranslation when the Transform moved. After `world.step(eventQueue)` dynamic poses go back to Transforms (through the
+parent), forces / torques reset, collision events become `onCollisionEnter/Exit` (Collision with first solver contact) or
+`onTriggerEnter/Exit` (either collider a sensor) on the owners' components. CharacterController.move → `moveCharacter`: Rapier
+KinematicCharacterController (slope / autostep / snap to ground, sensors excluded), body teleported, Transform updated, grounded
+returned. `dispose(scene)` on `Scene.end`.
+
+## 6. Motion (`components/motion.ts`, `MotionFsm.ts`)
+Motion keeps `layers` (clip, time, weight, speed, loop): `play(clip, fade)` keeps the current clip as the outgoing layer and fades
+weights over `fade` seconds; `tick(dt)` advances times (wrap / clamp by clip length), fades, then evaluates the FSM: transitions
+from the current state or `*` (skipping `* → current`), exitTime against the time in the state in clip lengths (unwrapped),
+conditions on parameters (`conditionsMet`), triggers consumed when used and cleared after every evaluation. `.fsm.json` files are
+loaded by `Assets.loadFsm` (normalized, shared, preloaded with scenes). Renderer side: `BabylonBackend.syncMotion`. Editor: Motion
+`updateInEdit` is ticked by the Runtime view in edit mode (restart when the fsm / clip field changes); FsmEditor (Inspector) edits
+parameters / states (renames follow into transitions / initial) / transitions / conditions.

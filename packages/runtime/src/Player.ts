@@ -1,5 +1,6 @@
 import { Application, Assets, Debug, Input, loadScene, Prefab, type Scene } from '@rs/core';
 import { BabylonBackend } from '@rs/render-babylon';
+import { initPhysics } from 'virtual:rs/physics';
 
 /**
  * Runs a scene in a canvas: play mode lifecycle + Babylon rendering, one requestAnimationFrame loop. Used by the packaged game
@@ -19,6 +20,7 @@ export class Player {
   }
 
   async start(scenePath: string): Promise<void> {
+    await initPhysics();
     const scene = await loadScene(scenePath);
     this.scene = scene;
     Prefab.activeScene = scene;

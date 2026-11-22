@@ -176,10 +176,10 @@ export function ObjectInput({ value, onChange }: { value: GameObject | null; onC
 }
 
 /** Draws one reflected field of a component / UserData. */
-export function FieldRow({ target, f }: { target: object; f: FieldInfo }) {
+export function FieldRow({ target, f, others = [] }: { target: object; f: FieldInfo; others?: readonly object[] }) {
   const o = target as Record<string, unknown>;
   const v = o[f.name];
-  const set = (val: unknown, _final = true) => editor.setField(target, f.name, val, true);
+  const set = (val: unknown, _final = true) => editor.setField(target, f.name, val, true, others);
   let control: React.ReactNode;
   switch (f.type) {
     case 'number':
@@ -197,7 +197,21 @@ export function FieldRow({ target, f }: { target: object; f: FieldInfo }) {
       control = <input type="checkbox" checked={!!v} onChange={(e) => set(e.target.checked)} />;
       break;
     case 'string':
-      control = <TextInput value={(v as string) ?? ''} onChange={(s) => set(s)} />;
+      if (f.choices) {
+        const list = [...f.choices(target)];
+        const cur = (v as string) ?? '';
+        control = (
+          <select value={cur} onChange={(e) => set(e.target.value)}>
+            <option value="">(None)</option>
+            {cur && !list.includes(cur) ? <option value={cur}>{cur}</option> : null}
+            {list.map((x) => (
+              <option key={x} value={x}>
+                {x}
+              </option>
+            ))}
+          </select>
+        );
+      } else control = <TextInput value={(v as string) ?? ''} onChange={(s) => set(s)} />;
       break;
     case 'vec3':
       control = <Vec3Input value={(v as Vector3) ?? new Vector3()} step={f.step ?? 0.1} onChange={(n, final) => set(n, final)} />;

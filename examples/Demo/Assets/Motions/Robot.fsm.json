@@ -1,0 +1,24 @@
+{
+  "format": 1,
+  "kind": "MotionFsm",
+  "initial": "Idle",
+  "parameters": [
+    { "name": "speed", "type": "float", "value": 0 },
+    { "name": "grounded", "type": "bool", "value": true },
+    { "name": "jump", "type": "trigger" }
+  ],
+  "states": [
+    { "name": "Idle", "clip": "Idle", "loop": true },
+    { "name": "Walk", "clip": "Walk", "loop": true },
+    { "name": "Run", "clip": "Run", "loop": true },
+    { "name": "Jump", "clip": "Jump", "loop": false }
+  ],
+  "transitions": [
+    { "from": "*", "to": "Jump", "conditions": [{ "param": "jump" }], "duration": 0.08 },
+    { "from": "Idle", "to": "Walk", "conditions": [{ "param": "speed", "op": ">", "value": 0.1 }], "duration": 0.2 },
+    { "from": "Walk", "to": "Idle", "conditions": [{ "param": "speed", "op": "<=", "value": 0.1 }], "duration": 0.25 },
+    { "from": "Walk", "to": "Run", "conditions": [{ "param": "speed", "op": ">", "value": 4 }], "duration": 0.2 },
+    { "from": "Run", "to": "Walk", "conditions": [{ "param": "speed", "op": "<=", "value": 4 }], "duration": 0.2 },
+    { "from": "Jump", "to": "Idle", "conditions": [{ "param": "grounded", "op": "==", "value": true }], "exitTime": 0.5, "duration": 0.15 }
+  ]
+}

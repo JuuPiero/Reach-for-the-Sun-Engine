@@ -27,8 +27,12 @@ packages/core            @rs/core — math (Babylon's Vector3 / Quaternion / Col
                          GameObject.ts (GameObject, Transform, Component, Behavior), Scene.ts (Folder, Scene, play lifecycle),
                          serialization.ts (scene / prefab / UserData JSON, MissingComponent), assets.ts (Assets: paths, caches),
                          Prefab.ts, UserData.ts, sceneLoader.ts, scripts.ts (registerScriptModule / syncScripts),
-                         components/render.ts (Mesh, Camera, Directional / Point / Spot / Ambient light), Input, Application, Debug
-packages/render-babylon  BabylonBackend: mirrors a Scene into Babylon every frame (sync → render), picking, model loading
+                         components/render.ts (Mesh, Camera, lights), components/physics.ts (Collider, RigidBody, CharacterController),
+                         Physics.ts (API + PhysicsProvider interface, fixed step in Scene.step), components/motion.ts (Motion) +
+                         MotionFsm.ts (.fsm.json state machines), Input, Application, Debug
+packages/render-babylon  BabylonBackend: mirrors a Scene into Babylon every frame (sync → render), picking, model loading, Motion → AnimationGroups
+packages/physics         @rs/physics — RapierPhysics (PhysicsProvider: bodies / colliders from components, character controller,
+                         queries, collision / trigger callbacks), initPhysics()
 packages/runtime         src/ = game player (Player, main.ts); vite/ = rsProjectPlugin (virtual:rs/scripts, virtual:rs/project,
                          /project/ file serving, asset copy), build.ts (game build), cli.ts (rs.mjs commands), project.ts
 packages/editor          src/editor/Editor.ts (singleton `editor`: scene, selection, undo, play, assets), src/ui/* (React panels),
@@ -68,3 +72,20 @@ scripts/e2e/             headless Chrome driver (driver.mjs) + editor / game che
   editor rebuilds the scene from JSON so components are instances of the new classes).
 - SwiftShader (headless Chrome) clips long lines crossing the camera plane wrongly: the editor grid is made of short segments.
 - HTML5 drag & drop (Hierarchies rows, AssetBrowser tiles) needs the driver's `dndjs` step (CDP drag events), not `drag`.
+- Physics (`@rs/physics`, Rapier compat = WASM inlined in JS): games import `virtual:rs/physics` (real only when the project names a
+  physics class / API — `projectUsesPhysics`), the editor always loads it; `await initPhysics()` before play. Bodies follow the
+  components every fixed step (signatures recreate changed bodies / colliders); dynamic bodies write their pose back to the Transform;
+  kinematic / static ones follow it. Never create Rapier objects outside the provider. Forces are cleared after each step (Unity-like).
+- Motion: the model's clips are Babylon AnimationGroups started + paused at load; `syncMotion` sets frame + weight from
+  `Motion.layers` every sync (no Motion = weights 0 = rest pose). Clip names reach the component through `_setClips`. Babylon's glTF
+  import keeps glTF's −Z front as the back: models must face +Z after import (the demo generator turns its root 180°).
+- MotionFsm edits go through `editor.saveFsm` (replaces the shared `Assets.setFsm` data, then writes the file); Motions compare the
+  shared object every tick and switch to it (keeping the state when it still exists).
+- The editor reloads the open scene when its file changes on disk and nothing is unsaved — another editor process saving the same
+  project overwrites in-memory work otherwise (two editors on one project = last save wins).
+- Theme: colours are CSS variables in styles.css `:root` (black + orange `--accent`); controls (select, checkbox, range, colour) are
+  restyled with `appearance: none` — new controls must use them, not browser defaults.
+- Rapier 0.21's character-controller snap-to-ground sometimes returns the full downward displacement for a resting character
+  (it sinks into the ground and then falls); it is disabled — scripts keep a small downward velocity while grounded. The
+  character body is re-placed from the Transform before every move; the first move of a world steps it once (new colliders reach
+  the query structures only through a step). Repro harness: `packages/physics/tests/demo.test.ts` (real Demo scene in Node).

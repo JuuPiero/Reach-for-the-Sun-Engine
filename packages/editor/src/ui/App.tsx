@@ -58,6 +58,7 @@ export function App() {
       items: () => [
         { label: 'New Scene', action: () => editor.newScene() },
         { label: 'Save Scene', shortcut: 'Ctrl+S', action: () => void editor.saveScene() },
+        { label: 'Reload Scene', action: () => editor.scene.path && void editor.openScene(editor.scene.path), disabled: !editor.scene.path },
         { label: 'Save Scene As…', shortcut: 'Ctrl+Shift+S', action: () => void editor.saveScene(true) },
         { separator: true },
         { label: 'Build Game (Web)', action: () => void editor.buildGame() },

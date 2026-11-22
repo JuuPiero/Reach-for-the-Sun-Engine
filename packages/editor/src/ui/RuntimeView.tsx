@@ -5,12 +5,14 @@ import { CreateLineSystem } from '@babylonjs/core/Meshes/Builders/linesBuilder';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import { CreateSphere } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
 import { CreateBox } from '@babylonjs/core/Meshes/Builders/boxBuilder';
+import { CreateCapsule } from '@babylonjs/core/Meshes/Builders/capsuleBuilder';
+import { CreateCylinder } from '@babylonjs/core/Meshes/Builders/cylinderBuilder';
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh';
 import type { Mesh as BMesh } from '@babylonjs/core/Meshes/mesh';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Color3, Color4, Plane, Quaternion, Vector3 } from '@babylonjs/core/Maths/math';
 import '@babylonjs/core/Rendering/outlineRenderer';
-import { AmbientLight, Camera, DirectionalLight, PointLight, SpotLight, type GameObject } from '@rs/core';
+import { AmbientLight, Camera, CharacterController, Collider, DirectionalLight, Motion, PointLight, SpotLight, type GameObject } from '@rs/core';
 import { BabylonBackend } from '@rs/render-babylon';
 import { editor } from '../editor/Editor';
 import { DT_ASSET } from './Hierarchies';
@@ -28,6 +30,9 @@ export function RuntimeView() {
   const [stats, setStats] = useState('');
   const [view, setView] = useState<'auto' | 'editor' | 'game'>('auto');
   const [showGrid, setShowGrid] = useState(true);
+  const [showColliders, setShowColliders] = useState(false);
+  const collidersRef = useRef(showColliders);
+  collidersRef.current = showColliders;
   const viewRef = useRef(view);
   viewRef.current = view;
   const gridRef = useRef(showGrid);
@@ -109,6 +114,31 @@ export function RuntimeView() {
     camMat.emissiveColor = new Color3(0.75, 0.8, 0.9);
     camMat.disableLighting = true;
     const markers = new Map<GameObject, BMesh>();
+    // collider wireframes
+    const wireMat = new StandardMaterial('__wire', bscene);
+    wireMat.emissiveColor = new Color3(0.35, 1, 0.45);
+    wireMat.disableLighting = true;
+    wireMat.wireframe = true;
+    const triggerMat = new StandardMaterial('__wireTrigger', bscene);
+    triggerMat.emissiveColor = new Color3(1, 0.75, 0.2);
+    triggerMat.disableLighting = true;
+    triggerMat.wireframe = true;
+    const wires = new Map<object, { mesh: BMesh; sig: string }>();
+    /** Wire mesh of a collider in world units (`ws` = |world scale| of its object), like the Rapier shape. */
+    const wireMesh = (c: Collider | CharacterController, ws: Vector3): BMesh => {
+      if (c instanceof CharacterController) return CreateCapsule('__wire', { height: c.height, radius: c.radius, tessellation: 12, subdivisions: 1 }, bscene);
+      const maxXZ = Math.max(ws.x, ws.z);
+      switch (c.shape) {
+        case 'Sphere':
+          return CreateSphere('__wire', { diameter: 2 * c.radius * Math.max(ws.x, ws.y, ws.z), segments: 8 }, bscene);
+        case 'Capsule':
+          return CreateCapsule('__wire', { height: Math.max(c.height * ws.y, 2 * c.radius * maxXZ), radius: c.radius * maxXZ, tessellation: 12, subdivisions: 1 }, bscene);
+        case 'Cylinder':
+          return CreateCylinder('__wire', { height: c.height * ws.y, diameter: 2 * c.radius * maxXZ, tessellation: 16 }, bscene);
+        default:
+          return CreateBox('__wire', { width: c.size.x * ws.x, height: c.size.y * ws.y, depth: c.size.z * ws.z }, bscene);
+      }
+    };
     // ---- gizmos
     const gizmos = new GizmoManager(bscene);
     gizmos.usePointerToAttachGizmos = false;
@@ -273,7 +303,20 @@ export function RuntimeView() {
       last = now;
       const scene = editor.scene;
       if (editor.mode === 'play') scene.step(dt);
-      else scene.step(0);
+      else {
+        scene.step(0);
+        // Motion "Update in Edit Mode": the editor animates it
+        if (editor.mode === 'edit')
+          for (const m of scene.findComponents(Motion)) {
+            if (!m.updateInEdit || !m.enabled || !m.gameObject.activeInHierarchy) continue;
+            if (!m.layers.length || m._editPreviewFsm !== m.fsm || m._editPreviewClip !== m.clip) {
+              m._editPreviewFsm = m.fsm;
+              m._editPreviewClip = m.clip;
+              m.restart();
+            }
+            m.tick(dt);
+          }
+      }
       const editorView = usingEditorCam();
       // fly with RMB held
       if (editorView && rmb) {
@@ -308,6 +351,51 @@ export function RuntimeView() {
         if (!seen.has(go)) {
           mk.dispose();
           markers.delete(go);
+        }
+      // collider wireframes: the selection (and its children), or every collider with "Colliders" on
+      const wantWires = new Set<object>();
+      if (editorView) {
+        const objs = collidersRef.current ? scene.allGameObjects() : editor.selectedObjects.flatMap((g) => [...g.selfAndDescendants()]);
+        for (const go of objs) {
+          const node = backend.nodeOf(go);
+          if (!node || !go.activeInHierarchy) continue;
+          const comps: (Collider | CharacterController)[] = [...go.getComponents(Collider)];
+          const cc = go.getComponent(CharacterController);
+          if (cc) comps.push(cc);
+          for (const c of comps) {
+            if (!c.enabled) continue;
+            wantWires.add(c);
+            const s = go.transform.worldMatrix.clone();
+            const ws = new Vector3();
+            s.decompose(ws);
+            ws.set(Math.abs(ws.x) || 1, Math.abs(ws.y) || 1, Math.abs(ws.z) || 1);
+            const sig = c instanceof CharacterController ? `cc|${c.radius}|${c.height}` : `${c.shape}|${c.size.x},${c.size.y},${c.size.z}|${c.radius}|${c.height}|${ws.x.toFixed(3)},${ws.y.toFixed(3)},${ws.z.toFixed(3)}|${c.isTrigger}`;
+            let w = wires.get(c);
+            if (!w || w.sig !== sig) {
+              w?.mesh.dispose();
+              const mesh = wireMesh(c, ws);
+              mesh.material = c instanceof Collider && c.isTrigger ? triggerMat : wireMat;
+              mesh.layerMask = EDITOR_LAYER;
+              mesh.isPickable = false;
+              w = { mesh, sig };
+              wires.set(c, w);
+            }
+            if (w.mesh.parent !== node) w.mesh.parent = node;
+            // sizes are built in world units: undo the node's scale (centres stay in local units, scaled like Rapier does)
+            if (c instanceof CharacterController) {
+              w.mesh.scaling.set(1 / ws.x, 1 / ws.y, 1 / ws.z);
+              w.mesh.position.set(c.center.x / ws.x, c.center.y / ws.y, c.center.z / ws.z);
+            } else {
+              w.mesh.scaling.set(1 / ws.x, 1 / ws.y, 1 / ws.z);
+              w.mesh.position.copyFrom(c.center);
+            }
+          }
+        }
+      }
+      for (const [c, w] of wires)
+        if (!wantWires.has(c)) {
+          w.mesh.dispose();
+          wires.delete(c);
         }
       // gizmo + outlines on the selection
       const sel = editor.selectedObjects;
@@ -386,6 +474,9 @@ export function RuntimeView() {
         <span className="rs-sep" />
         <button className={`rs-tool${showGrid ? ' active' : ''}`} title="Grid" onClick={() => setShowGrid(!showGrid)}>
           <Icons.Grid size={14} />
+        </button>
+        <button className={`rs-seg${showColliders ? ' active' : ''}`} title="Show every collider (selected objects always show theirs)" onClick={() => setShowColliders(!showColliders)}>
+          Colliders
         </button>
         <button className="rs-tool" title="Focus selection (F)" onClick={() => focusRef.current()}>
           <Icons.Focus size={14} />

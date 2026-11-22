@@ -36,6 +36,7 @@ for (const t of selected) {
     outfile: o,
     alias,
     keepNames: true,
+    minify: process.env.RS_TEST_MINIFY === '1',
     logLevel: 'error',
     tsconfigRaw: { compilerOptions: { experimentalDecorators: true, useDefineForClassFields: true } },
     plugins: [

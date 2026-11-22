@@ -16,6 +16,7 @@
     "paths": {
       "@rs/core": ["./packages/core/src/index.ts"],
       "@rs/render-babylon": ["./packages/render-babylon/src/index.ts"],
+      "@rs/physics": ["./packages/physics/src/index.ts"],
       "@rs/runtime": ["./packages/runtime/src/index.ts"],
       "@rs/editor": ["./packages/editor/src/api.ts"]
     }

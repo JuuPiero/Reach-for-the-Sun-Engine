@@ -247,6 +247,14 @@ export const Icons = {
       <path d="M9.5 1.5v3h3" />
     </I>
   ),
+  Fsm: (p: P) => (
+    <I {...p}>
+      <circle cx="4" cy="4" r="2.2" />
+      <circle cx="12" cy="6" r="2.2" />
+      <circle cx="6" cy="12.5" r="2.2" />
+      <path d="M6.2 4.4l3.6 1M10.8 7.8l-3.6 3.2M4.4 6.2l1 4.1" />
+    </I>
+  ),
   Console: (p: P) => (
     <I {...p}>
       <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
@@ -289,6 +297,7 @@ export function assetVisual(path: string, dir: boolean): { icon: (p: P) => JSX.E
   if (p.endsWith('.scn.json')) return { icon: Icons.Scene, color: '#b07cff', kind: 'Scene' };
   if (p.endsWith('.pfb.json')) return { icon: Icons.Prefab, color: '#3fa7ff', kind: 'Prefab' };
   if (p.endsWith('.user.json')) return { icon: Icons.UserData, color: '#ff6fa6', kind: 'UserData' };
+  if (p.endsWith('.fsm.json')) return { icon: Icons.Fsm, color: '#ff5d73', kind: 'MotionFsm' };
   if (p.endsWith('.ts')) return { icon: Icons.Script, color: '#62d26f', kind: 'Script' };
   if (/\.(glb|gltf)$/.test(p)) return { icon: Icons.Model, color: '#4fd1c5', kind: 'Model' };
   if (/\.(png|jpe?g|webp)$/.test(p)) return { icon: Icons.Image, color: '#e7c35a', kind: 'Texture' };

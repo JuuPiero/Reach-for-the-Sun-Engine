@@ -26,6 +26,9 @@ export interface FieldOptions {
   tooltip?: string;
   /** Serialized but not drawn. */
   hidden?: boolean;
+  /** `string`: suggested values computed from the object (drawn as a drop-down, e.g. the clips of a model). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  choices?: (target: any) => readonly string[];
 }
 
 export interface FieldInfo extends FieldOptions {

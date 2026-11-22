@@ -2,6 +2,7 @@ import { Application } from './Application';
 import { Debug } from './Debug';
 import { Behavior, Component, GameObject, _nextTransformFrame } from './GameObject';
 import { Input } from './Input';
+import { Physics } from './Physics';
 
 /**
  * Folder / Scene — RE-style organisation: a scene is a tree of Folders (each can be switched off as a whole) holding root
@@ -88,6 +89,7 @@ export class Scene {
   playing = false;
   private readonly _toStart: Component[] = [];
   private readonly _toDestroy: GameObject[] = [];
+  private _physicsTime = 0;
   /** Bumped by structural changes (objects / folders added, removed, moved). */
   version = 0;
 
@@ -230,6 +232,8 @@ export class Scene {
     this.playing = false;
     this._toStart.length = 0;
     this._toDestroy.length = 0;
+    this._physicsTime = 0;
+    Physics.provider?.dispose(this);
   }
 
   /** One frame (play mode runs the lifecycle; edit mode only refreshes transforms). */
@@ -256,6 +260,26 @@ export class Scene {
         }
       }
     }
+    // fixed-rate physics: fixedUpdate, then one simulation step (callbacks fire inside the provider's step)
+    Physics._setActiveScene(this);
+    const fdt = Physics.fixedDeltaTime;
+    this._physicsTime += Application.deltaTime;
+    let steps = 0;
+    while (this._physicsTime >= fdt && steps < Physics.maxSubSteps) {
+      this._physicsTime -= fdt;
+      steps++;
+      for (const g of this.allGameObjects())
+        for (const c of g.components)
+          if (c.fixedUpdate && c._started && runs(c)) {
+            try {
+              c.fixedUpdate();
+            } catch (e) {
+              Debug.exception(e, c);
+            }
+          }
+      Physics.provider?.step(this, fdt);
+    }
+    if (steps === Physics.maxSubSteps) this._physicsTime = Math.min(this._physicsTime, fdt);
     const all = this.allGameObjects();
     for (const g of all)
       for (const c of g.components)

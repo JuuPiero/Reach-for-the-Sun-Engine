@@ -7,6 +7,14 @@ export const SCRIPTS_ID = 'virtual:rs/scripts';
 export const PROJECT_ID = 'virtual:rs/project';
 const R_SCRIPTS = '\0' + SCRIPTS_ID;
 const R_PROJECT = '\0' + PROJECT_ID;
+export const PHYSICS_ID = 'virtual:rs/physics';
+const R_PHYSICS = '\0' + PHYSICS_ID;
+
+/** Physics usage in a project (scenes / prefabs / scripts name a physics component or the Physics API). */
+const PHYSICS_RE = /\b(RigidBody|Collider|CharacterController|Physics)\b/;
+export function projectUsesPhysics(root: string): boolean {
+  return listAssetFiles(root).some((f) => /\.(json|ts)$/.test(f) && PHYSICS_RE.test(fs.readFileSync(path.join(root, f), 'utf8')));
+}
 
 export interface RsProjectPluginOptions {
   projectRoot: string;
@@ -64,6 +72,7 @@ export function rsProjectPlugin(opts: RsProjectPluginOptions): Plugin {
           alias: {
             '@rs/core': pkg('core'),
             '@rs/render-babylon': pkg('render-babylon'),
+            '@rs/physics': pkg('physics'),
             '@rs/runtime': pkg('runtime'),
             '@rs/editor': pkg('editor', 'api.ts'),
           },
@@ -78,11 +87,14 @@ export function rsProjectPlugin(opts: RsProjectPluginOptions): Plugin {
     resolveId(id) {
       if (id === SCRIPTS_ID) return R_SCRIPTS;
       if (id === PROJECT_ID) return R_PROJECT;
+      if (id === PHYSICS_ID) return R_PHYSICS;
       return null;
     },
 
     load(id) {
       if (id === R_SCRIPTS) return scriptsModule();
+      // Rapier (~2 MB of WASM) only in games whose project uses physics (projectUsesPhysics); the editor always has it
+      if (id === R_PHYSICS) return opts.mode === 'editor' || projectUsesPhysics(projectRoot) ? `export { initPhysics } from '@rs/physics';\n` : `export const initPhysics = () => Promise.resolve();\n`;
       if (id === R_PROJECT) return `export const project = ${JSON.stringify(readProject(projectRoot))};\nexport const projectRoot = ${JSON.stringify(opts.mode === 'editor' ? toPosix(projectRoot) : '')};`;
       return null;
     },

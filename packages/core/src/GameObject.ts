@@ -163,7 +163,14 @@ export abstract class Component {
   start?(): void;
   update?(): void;
   lateUpdate?(): void;
+  /** Every physics step (Physics.fixedDeltaTime), before the simulation. */
+  fixedUpdate?(): void;
   onDestroy?(): void;
+  /** Physics callbacks (components of the object that owns the collider / body). */
+  onCollisionEnter?(c: import('./Physics').Collision): void;
+  onCollisionExit?(c: import('./Physics').Collision): void;
+  onTriggerEnter?(other: GameObject): void;
+  onTriggerExit?(other: GameObject): void;
   /** Edit mode too: called when a field changed in the Inspector. */
   onValidate?(): void;
 }

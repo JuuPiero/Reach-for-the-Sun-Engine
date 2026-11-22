@@ -24,12 +24,16 @@ import {
   Types,
   UserData,
   Vector3,
+  Motion,
+  emptyFsm,
+  type MotionFsmData,
   type Component,
   type LogEntry,
   type MeshShape,
   type SceneJson,
 } from '@rs/core';
 import { api, type FileEntry } from './client';
+import { initPhysics } from 'virtual:rs/physics';
 
 /**
  * The editor (singleton `editor`): the open scene, selection, undo / redo (scene JSON snapshots taken by `recordUndo` before a
@@ -102,6 +106,7 @@ export class Editor {
   // ---- project ----------------------------------------------------------------------------------------------------------
   async init(): Promise<void> {
     Assets.baseUrl = '/project/';
+    await initPhysics();
     const p = await api.project();
     this.projectName = p.name;
     this.projectRoot = p.root;
@@ -121,9 +126,13 @@ export class Editor {
     const own = this.ownWrites.get(path);
     if (own && Date.now() - own < 1500) {
       this.ownWrites.delete(path);
-    } else if (kind === 'change' && (path.endsWith('.user.json') || path.endsWith('.pfb.json'))) {
+    } else if (kind === 'change' && (path.endsWith('.user.json') || path.endsWith('.pfb.json') || path.endsWith('.fsm.json'))) {
       Assets.invalidate(path);
       if (path === this.selectedAsset) void this.selectAsset(path);
+    } else if (kind === 'change' && path === this.scene.path) {
+      // the open scene was written by someone else (another editor, a text editor, git)
+      if (this.dirty || this.mode !== 'edit') Debug.warn(`${path} changed on disk; saving now would overwrite those changes (File ▸ Reload Scene to take them)`);
+      else void this.openScene(path, true).then(() => Debug.log(`${path} reloaded (changed on disk)`));
     }
     clearTimeout(this.refreshTimer);
     this.refreshTimer = window.setTimeout(() => void this.refreshFiles(), 120);
@@ -311,6 +320,7 @@ export class Editor {
     this.selection = [];
     this.selectedFolder = null;
     if (path?.endsWith('.user.json')) this.editedUserData = await Assets.loadUserData(path);
+    if (path?.endsWith('.fsm.json')) await Assets.loadFsm(path);
     this.emit('selection', 'inspector');
   }
 
@@ -470,8 +480,8 @@ export class Editor {
     c.gameObject.removeComponent(c);
     this.changed(true);
   }
-  /** Sets a field of a component / UserData from the Inspector. */
-  setField(target: object, name: string, value: unknown, coalesce = true): void {
+  /** Sets a field of a component / UserData from the Inspector; `others` = the same component of the other selected objects. */
+  setField(target: object, name: string, value: unknown, coalesce = true, others: readonly object[] = []): void {
     if (target instanceof UserData) {
       (target as unknown as Record<string, unknown>)[name] = value;
       this.saveUserDataSoon(target);
@@ -479,17 +489,49 @@ export class Editor {
       return;
     }
     this.recordUndo(`Edit ${name}`, coalesce);
-    (target as Record<string, unknown>)[name] = value;
-    const c = target as Component;
-    if (typeof c.onValidate === 'function') {
-      try {
-        c.onValidate();
-      } catch (e) {
-        Debug.exception(e, c);
+    for (const t of [target, ...others]) {
+      // each object gets its own copy of value types (vectors / colours are mutable)
+      const v = t === target ? value : (value as { clone?: () => unknown } | null)?.clone ? (value as { clone: () => unknown }).clone() : value;
+      (t as Record<string, unknown>)[name] = v;
+      const c = t as Component;
+      if (typeof c.onValidate === 'function') {
+        try {
+          c.onValidate();
+        } catch (e) {
+          Debug.exception(e, c);
+        }
       }
+      if (c.gameObject) c.gameObject.componentsVersion++;
     }
-    if (c.gameObject) c.gameObject.componentsVersion++;
     this.changed();
+  }
+
+  // ---- motion FSM assets ----------------------------------------------------------------------------------------------
+  /** Saves an edited MotionFsm (shared data replaced: Motions playing it pick the change up). */
+  async saveFsm(path: string, data: MotionFsmData): Promise<void> {
+    Assets.setFsm(path, data);
+    this.emit('inspector');
+    clearTimeout(this.fsmTimers.get(path));
+    this.fsmTimers.set(
+      path,
+      window.setTimeout(() => void this.write(path, data), 250),
+    );
+  }
+  private fsmTimers = new Map<string, number>();
+
+  async createFsm(dir = this.assetFolder): Promise<string> {
+    const p = this.freeAssetPath(dir, 'NewMotion', '.fsm.json');
+    await this.write(p, emptyFsm());
+    await this.refreshFiles();
+    await this.selectAsset(p);
+    return p;
+  }
+
+  /** Clip names of every loaded model with a Motion in the scene (FSM editor suggestions). */
+  knownClips(): string[] {
+    const s = new Set<string>();
+    for (const m of this.scene.findComponents(Motion)) for (const c of m.clipNames) s.add(c);
+    return [...s].sort();
   }
   /** Copies Inspector transform edits (undo already recorded by the caller). */
   transformChanged(go: GameObject): void {

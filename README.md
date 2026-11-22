@@ -54,6 +54,33 @@ export class Player extends Behavior {
 - API khác: `Application.deltaTime / time / timeScale`, `Input.getKey / getKeyDown / axis / mouseX…`, `Debug.log / warn / error`
   (hiện ở Console), `this.scene.find('Tên')`, `findWithTag`, `findComponents`, `gameObject.destroy()`.
 
+## Vật lý (Rapier)
+
+- **Collider** (Box / Sphere / Capsule / Cylinder; Center, Size, Radius, Height, Is Trigger, Friction, Restitution): không có
+  RigidBody thì là vật tĩnh; collider ở object con của một RigidBody thuộc về body đó (ghép nhiều hình).
+- **RigidBody**: Dynamic (mô phỏng) / Kinematic (đi theo Transform — ví dụ khối xoay bằng script vẫn đẩy được vật khác) /
+  Static; Mass, Damping, Use Gravity, CCD, khoá xoay theo trục. Script: `velocity`, `addForce`, `addImpulse`, `addTorque`,
+  `syncFromTransform()` (sau khi tự dời vật).
+- **CharacterController**: capsule di chuyển bằng `move(dịchChuyển)` — trượt theo tường, tự bước lên bậc (Step Offset), không
+  leo dốc quá Slope Limit, bám đất; `isGrounded`, `velocity`.
+- Callback trên Behavior: `onCollisionEnter / onCollisionExit(collision)` (object kia, điểm, pháp tuyến),
+  `onTriggerEnter / onTriggerExit(object)`, `fixedUpdate()` (mỗi bước vật lý, 60 lần / giây).
+- Truy vấn: `Physics.raycast(gốc, hướng, khoảngCách, { ignore, triggers })`, `Physics.overlapSphere(tâm, bánKính)`, `Physics.gravity`.
+- Bản build chỉ kèm Rapier khi project dùng vật lý (scene / prefab / script nhắc tới Collider, RigidBody, CharacterController
+  hoặc Physics). Runtime view vẽ khung dây collider của object đang chọn (xanh lá = vật cản, vàng = trigger); nút **Colliders**
+  để hiện tất cả.
+
+## Motion (animation)
+
+- **Motion** (đặt cùng object có Mesh dạng Model `.glb`/`.gltf`): phát các clip animation của model, chuyển clip có làm mờ
+  (Cross Fade), Speed, Loop. Ô **Clip** là danh sách clip đọc từ model. Bật **Update In Edit** để xem animation ngay trong editor.
+- **MotionFsm** (`.fsm.json`, tạo bằng Create ▸ Motion FSM): máy trạng thái — Parameters (float / bool / trigger), States (tên,
+  clip, speed, loop), Transitions (từ state / Any State → state, điều kiện theo tham số, Exit Time, thời gian chuyển). Chỉnh trực
+  tiếp trong Inspector, tự lưu, object đang chạy nhận thay đổi ngay. Script điều khiển: `motion.setFloat('speed', v)`,
+  `setBool('grounded', true)`, `setTrigger('jump')`, `play('Run', 0.2)`, đọc `state`, `currentClip`, `normalizedTime`.
+- Demo: robot (model sinh bởi `node scripts/gen-demo-assets.mjs`) có các clip Idle / Walk / Run / Jump; WASD để đi, Shift để
+  chạy, Space để nhảy; thùng gỗ / bóng là vật Dynamic, cầu thang và dốc là vật tĩnh, coin là trigger.
+
 ## Editor
 
 - **Hierarchies**: cây Folder / GameObject (folder chữ xanh đậm, object chữ nghiêng), hai nút bật/tắt Update / Draw ở đầu mỗi
@@ -78,7 +105,13 @@ export class Player extends Behavior {
   lỗi / bị xoá: component thành "missing script" nhưng dữ liệu vẫn được giữ và lưu lại.
 - File ▸ **Build Game (Web)**: build ngay từ editor, kết quả ghi ở Console.
 
-## Giới hạn hiện tại (mốc 1)
+- **Chọn nhiều object**: sửa Transform chỉ áp trục vừa đổi cho tất cả (giữ nguyên các trục khác), sửa field của component có ở
+  mọi object đã chọn; một lần Undo hoàn tác cả nhóm.
+- Scene đang mở bị sửa từ ngoài (editor khác, git…): tự nạp lại nếu chưa có thay đổi chưa lưu, nếu có thì Console cảnh báo
+  (File ▸ Reload Scene để lấy bản trên đĩa).
+- Giao diện tông đen + cam, mọi control (menu, ô chọn, checkbox, thanh trượt, ô màu, ô số X/Y/Z) đều tự vẽ.
 
-Chưa có vật lý, animation (Motion / FSM), VFX, âm thanh, UI trong game, nhiều scene cùng lúc; prefab chưa có override (đặt
-prefab = bản sao có ghi nguồn); chọn nhiều object chỉ chỉnh object đầu tiên trong Inspector.
+## Giới hạn hiện tại (mốc 2)
+
+Chưa có VFX, âm thanh, UI trong game, nhiều scene cùng lúc, skinned mesh / root motion, layer va chạm; prefab chưa có override
+(đặt prefab = bản sao có ghi nguồn). Game dùng vật lý nặng thêm ~3,5 MB (Rapier bản nhúng WASM).

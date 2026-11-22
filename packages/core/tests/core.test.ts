@@ -11,6 +11,8 @@ import {
   GameObject,
   getFields,
   Mesh,
+  Motion,
+  normalizeFsm,
   MissingComponent,
   Prefab,
   Scene,
@@ -186,4 +188,68 @@ test('assets: scene preloads UserData and prefabs; prefabs instantiate with fres
   const back = serializeScene(s).root.gameObjects[0].components[0].fields;
   assert.equal(back.param, 'Assets/P.user.json');
   assert.equal(back.prefab, 'Assets/Coin.pfb.json');
+});
+
+test('Motion: FSM transitions (float / bool / trigger / exit time), cross-fade weights, edits picked up', () => {
+  const fsm = normalizeFsm({
+    initial: 'Idle',
+    parameters: [
+      { name: 'speed', type: 'float', value: 0 },
+      { name: 'grounded', type: 'bool', value: true },
+      { name: 'jump', type: 'trigger' },
+    ],
+    states: [
+      { name: 'Idle', clip: 'Idle' },
+      { name: 'Walk', clip: 'Walk' },
+      { name: 'Jump', clip: 'Jump', loop: false },
+    ],
+    transitions: [
+      { from: '*', to: 'Jump', conditions: [{ param: 'jump' }], duration: 0 },
+      { from: 'Idle', to: 'Walk', conditions: [{ param: 'speed', op: '>', value: 0.1 }], duration: 0.5 },
+      { from: 'Walk', to: 'Idle', conditions: [{ param: 'speed', op: '<=', value: 0.1 }], duration: 0.2 },
+      { from: 'Jump', to: 'Idle', conditions: [{ param: 'grounded', op: '==', value: true }], exitTime: 1, duration: 0 },
+    ],
+  });
+  Assets.setFsm('Assets/M.fsm.json', fsm);
+  const go = new GameObject('Robot');
+  const m = go.addComponent(Motion);
+  m.fsm = 'Assets/M.fsm.json';
+  m._setClips(new Map([['Idle', 2], ['Walk', 1], ['Jump', 0.8]]));
+  m.restart();
+  assert.equal(m.state, 'Idle');
+  m.tick(0.1);
+  m.setFloat('speed', 2);
+  m.tick(0.1);
+  assert.equal(m.state, 'Walk');
+  assert.equal(m.layers.length, 2, 'fading from Idle');
+  m.tick(0.25);
+  assert.ok(Math.abs(m.layers[1].weight - 0.5) < 1e-6 && Math.abs(m.layers[0].weight - 0.5) < 1e-6, JSON.stringify(m.layers));
+  m.tick(0.3);
+  assert.equal(m.layers.length, 1);
+  assert.equal(m.currentClip, 'Walk');
+  m.tick(1.5);
+  assert.ok(m.layers[0].time < 1, 'looping clip wraps');
+  m.setTrigger('jump');
+  m.tick(0.01);
+  assert.equal(m.state, 'Jump');
+  m.tick(0.5);
+  assert.equal(m.state, 'Jump', 'exit time not reached');
+  m.tick(0.5);
+  assert.equal(m.state, 'Idle');
+  assert.ok(Math.abs(m.layers[0].time - 0) < 1e-6);
+  // a trigger not used this frame is gone next frame
+  m.setTrigger('jump');
+  m.setFloat('speed', 0);
+  // editing the shared FSM: Motions pick it up
+  Assets.setFsm('Assets/M.fsm.json', { ...fsm, transitions: [] });
+  m.tick(0.1);
+  assert.equal(m.state, 'Idle', 'state kept, edited FSM has no transitions');
+  // without FSM: plays `clip`
+  const m2 = new GameObject('B').addComponent(Motion);
+  m2.clip = 'Walk';
+  m2.restart();
+  assert.equal(m2.currentClip, 'Walk');
+  m2.play('Idle', 0.4);
+  m2.tick(0.2);
+  assert.deepEqual(m2.layers.map((l) => [l.clip, Math.round(l.weight * 100) / 100]), [['Walk', 0.5], ['Idle', 0.5]]);
 });

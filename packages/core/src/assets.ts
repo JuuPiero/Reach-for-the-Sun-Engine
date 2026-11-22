@@ -2,6 +2,7 @@ import { Debug } from './Debug';
 import { Prefab } from './Prefab';
 import type { PrefabJson, UserDataJson } from './serialization';
 import type { UserData } from './UserData';
+import { normalizeFsm, type MotionFsmData } from './MotionFsm';
 
 /**
  * Project files by path (`Assets/...`, the RE way: references are paths). `baseUrl` is where they are served
@@ -11,12 +12,14 @@ import type { UserData } from './UserData';
 const json = new Map<string, Promise<unknown>>();
 const userData = new Map<string, UserData>();
 const prefabs = new Map<string, Prefab>();
+const fsms = new Map<string, MotionFsmData>();
 let readUserData: ((j: UserDataJson, path: string) => UserData | null) | null = null;
 
 export const ASSET_EXT = {
   scene: '.scn.json',
   prefab: '.pfb.json',
   userdata: '.user.json',
+  fsm: '.fsm.json',
 } as const;
 
 export const Assets = {
@@ -87,28 +90,51 @@ export const Assets = {
     return p;
   },
 
-  /** Loads every UserData / prefab a JSON document mentions (recursively for prefabs). */
+  /** Loads a MotionFsm file (shared, normalized). */
+  async loadFsm(path: string): Promise<MotionFsmData | null> {
+    const have = fsms.get(path);
+    if (have) return have;
+    try {
+      const d = normalizeFsm(await Assets.loadJson<MotionFsmData>(path));
+      fsms.set(path, d);
+      return d;
+    } catch (e) {
+      Debug.error(`MotionFsm ${path}: ${(e as Error).message}`);
+      return null;
+    }
+  },
+  getFsm(path: string): MotionFsmData | null {
+    return fsms.get(path) ?? null;
+  },
+  /** Replaces the shared FSM data (editor edits). */
+  setFsm(path: string, d: MotionFsmData): void {
+    fsms.set(path, d);
+  },
+
+  /** Loads every UserData / prefab / MotionFsm a JSON document mentions (recursively for prefabs). */
   async preloadReferences(doc: unknown): Promise<void> {
     const refs = new Set<string>();
     const walk = (v: unknown) => {
       if (typeof v === 'string') {
-        if (v.endsWith(ASSET_EXT.userdata) || v.endsWith(ASSET_EXT.prefab)) refs.add(v);
+        if (v.endsWith(ASSET_EXT.userdata) || v.endsWith(ASSET_EXT.prefab) || v.endsWith(ASSET_EXT.fsm)) refs.add(v);
       } else if (Array.isArray(v)) v.forEach(walk);
       else if (v && typeof v === 'object') Object.values(v).forEach(walk);
     };
     walk(doc);
-    await Promise.all([...refs].map((r) => (r.endsWith(ASSET_EXT.userdata) ? Assets.loadUserData(r) : Assets.loadPrefab(r))));
+    await Promise.all([...refs].map((r) => (r.endsWith(ASSET_EXT.userdata) ? Assets.loadUserData(r) : r.endsWith(ASSET_EXT.fsm) ? Assets.loadFsm(r) : Assets.loadPrefab(r))));
   },
 
   /** Forgets cached files (the editor after a file changed on disk). */
   invalidate(path?: string): void {
     if (!path) {
       json.clear();
+      fsms.clear();
       userData.clear();
       for (const p of prefabs.values()) p.data = null;
       return;
     }
     json.delete(path);
+    fsms.delete(path);
     userData.delete(path);
     const p = prefabs.get(path);
     if (p) p.data = null;

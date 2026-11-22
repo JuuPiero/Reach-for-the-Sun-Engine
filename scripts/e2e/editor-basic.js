@@ -6,12 +6,13 @@
   const check = (name, ok, extra) => out.push(`${ok ? 'PASS' : 'FAIL'} ${name}${extra !== undefined ? ` (${JSON.stringify(extra)})` : ''}`);
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const s0 = E.scene;
-  check('scene loaded', s0.name === 'Main' && s0.allGameObjects().length === 9, s0.allGameObjects().length);
-  check('folders', s0.root.folders.map((f) => f.name).join(',') === 'Environment,Player,Gimmick');
+  const N0 = s0.allGameObjects().length;
+  check('scene loaded', s0.name === 'Main' && N0 >= 19, N0);
+  check('folders', s0.root.folders.map((f) => f.name).join(',') === 'Environment,Player,Props,Gimmick');
   const player = s0.find('Player');
   check('script component deserialized', player.components.map((c) => c.constructor.name).length === 2 && !!player.getComponent('PlayerController'));
   const pc = player.getComponent('PlayerController');
-  check('userdata reference resolved', pc.param && pc.param.moveSpeed === 6, pc.param && pc.param.moveSpeed);
+  check('userdata reference resolved', pc.param && pc.param.moveSpeed === 3.5, pc.param && pc.param.moveSpeed);
   check('gameobject reference resolved', pc.followCamera && pc.followCamera.name === 'MainCamera');
   // select via the Hierarchies row
   const row = document.querySelector('.rs-row[data-key="g:30"]');
@@ -49,7 +50,7 @@
   check('selection survives play', E.selection.length === 1);
   // undo everything back to the file
   while (E.canUndo) E.undo();
-  check('undo to the start', E.scene.allGameObjects().length === 9 && E.scene.findById(30).getComponent('Mesh').shape === 'Box');
+  check('undo to the start', E.scene.allGameObjects().length === N0 && E.scene.findById(30).getComponent('Mesh').shape === 'Box');
   // folder ops
   const f = E.createFolder('');
   E.rename(f, 'Enemies');

@@ -26,7 +26,9 @@ import type { AssetContainer } from '@babylonjs/core/assetContainer';
 import '@babylonjs/loaders/glTF';
 import '@babylonjs/core/Culling/ray';
 import { Color3, Color4, Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math';
-import { AmbientLight, Assets, Camera, DirectionalLight, Mesh, PointLight, SpotLight, type GameObject, type Scene } from '@rs/core';
+import { AmbientLight, Assets, Camera, DirectionalLight, Mesh, Motion, PointLight, SpotLight, type GameObject, type Scene } from '@rs/core';
+import type { AnimationGroup } from '@babylonjs/core/Animations/animationGroup';
+import '@babylonjs/core/Animations/animatable';
 
 /**
  * Babylon.js renderer of RS Engine scenes. The scene owns no Babylon objects: every frame `sync(scene)` creates / updates /
@@ -40,6 +42,9 @@ interface MeshEntry {
   meshes: AbstractMesh[];
   material: StandardMaterial | null;
   loading: boolean;
+  /** Animation clips of a model (paused; driven by a Motion component). */
+  anims: Map<string, { group: AnimationGroup; fps: number; from: number; length: number }>;
+  clipsReported: object | null;
 }
 interface Entry {
   node: TransformNode;
@@ -215,7 +220,7 @@ export class BabylonBackend {
     if (!e.mesh) {
       const root = new TransformNode(`mesh:${go.id}`, this.scene);
       root.parent = e.node;
-      e.mesh = { key, root, meshes: [], material: null, loading: false };
+      e.mesh = { key, root, meshes: [], material: null, loading: false, anims: new Map(), clipsReported: null };
       if (c.shape === 'Model') this.loadModel(go, e.mesh, c.model);
       else {
         const m = this.primitive(c.shape, `prim:${go.id}`);
@@ -226,6 +231,7 @@ export class BabylonBackend {
     }
     const me = e.mesh;
     me.root.setEnabled(visible);
+    this.syncMotion(me, go.getComponent(Motion));
     if (c.shape !== 'Model') {
       if (!me.material) me.material = new StandardMaterial(`mat:${go.id}`, this.scene);
       const mat = me.material;
@@ -289,8 +295,31 @@ export class BabylonBackend {
       for (const n of inst.rootNodes) n.parent = me.root;
       for (const n of inst.rootNodes) for (const m of n.getChildMeshes(false)) (me.meshes.push(m), this.tagMesh(m, go));
       for (const n of inst.rootNodes) if ((n as AbstractMesh).getTotalVertices) (me.meshes.push(n as AbstractMesh), this.tagMesh(n as AbstractMesh, go));
-      for (const g of inst.animationGroups) g.play(true);
+      // clips: started and paused; a Motion component sets their frame / weight every sync
+      for (const g of inst.animationGroups) {
+        const fps = g.targetedAnimations[0]?.animation.framePerSecond ?? 60;
+        g.start(true, 1, g.from, g.to, false);
+        g.pause();
+        g.weight = 0;
+        me.anims.set(g.name, { group: g, fps, from: g.from, length: (g.to - g.from) / fps });
+      }
+      me.clipsReported = null;
     });
+  }
+
+  /** Applies a Motion's layers to the model's clips (frame + weight); without Motion the model keeps its rest pose. */
+  private syncMotion(me: MeshEntry, motion: Motion | null): void {
+    if (!me.anims.size) return;
+    if (motion && me.clipsReported !== motion) {
+      motion._setClips(new Map([...me.anims].map(([n, a]) => [n, a.length])));
+      me.clipsReported = motion;
+    }
+    for (const [name, a] of me.anims) {
+      const layer = motion?.enabled ? motion.layers.find((l) => l.clip === name) : undefined;
+      const w = layer ? layer.weight : 0;
+      if (a.group.weight !== w) a.group.weight = w;
+      if (layer) a.group.goToFrame(a.from + Math.min(layer.time, a.length) * a.fps);
+    }
   }
 
   private texture(path: string): Texture {
