@@ -99,7 +99,7 @@ export class Player extends Behavior {
 - **Inspector**: tên, tag, Update / Draw, **Add Component**, Transform **Global** (Position / Rotation / Scale) và **Local**,
   từng component có checkbox bật / tắt, nút xoá, các field (kéo nhãn X/Y/Z để thay đổi nhanh, phím ↑ / ↓ tăng giảm, gõ biểu
   thức `2*3`). Chọn asset trong AssetBrowser: UserData chỉnh trực tiếp, scene (Open), prefab (Add to Scene), script (các class
-  định nghĩa, Open in VS Code), texture (xem trước).
+  định nghĩa, Open in VS Code), texture (xem trước), material (quả cầu xem trước + chỉnh), âm thanh (Play / Stop, thời lượng).
 - **AssetBrowser**: cây thư mục + Favorites, breadcrumb, ô asset có icon màu theo loại (Scene tím, Prefab xanh dương, UserData
   hồng, Script xanh lá, Model, Texture có ảnh thu nhỏ). Create ▸ Folder / Scene / Script / UserData, F2 đổi tên, Del xoá,
   double-click mở (thư mục, scene, script trong VS Code), kéo ô vào thư mục để di chuyển.

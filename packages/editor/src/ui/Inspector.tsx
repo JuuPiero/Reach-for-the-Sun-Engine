@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MissingComponent, Physics, Quaternion, Types, Vector3, eulerDegFromQuat, quatFromEulerDeg, scriptTypes, type Component, type GameObject } from '@rs/core';
+import { AudioEngine, MissingComponent, Physics, Quaternion, Types, Vector3, eulerDegFromQuat, quatFromEulerDeg, scriptTypes, type Component, type GameObject, type Material } from '@rs/core';
 import { editor } from '../editor/Editor';
 import { assetVisual, Icons } from './icons';
 import { FieldRow, TextInput, Vec3Input } from './fields';
@@ -224,6 +224,85 @@ function ObjectInspector({ go, count }: { go: GameObject; count: number }) {
   );
 }
 
+/** A lit-ball look of a Material (CSS: colour, texture, roughness → highlight size, metallic → contrast, emission glow). */
+function MaterialPreview({ m }: { m: Material }) {
+  useTicker(true, 300); // follows edits
+  const css = (r: number, g: number, b: number, a = 1) => `rgba(${Math.round(Math.min(1, r) * 255)},${Math.round(Math.min(1, g) * 255)},${Math.round(Math.min(1, b) * 255)},${a})`;
+  const c = m.color;
+  const rough = Math.min(1, Math.max(0, m.roughness));
+  const metal = Math.min(1, Math.max(0, m.metallic));
+  const spot = 6 + rough * 30; // highlight size (%)
+  const hl = metal > 0.5 ? css(Math.min(1, c.r + 0.6), Math.min(1, c.g + 0.6), Math.min(1, c.b + 0.6), 1 - rough * 0.7) : `rgba(255,255,255,${0.85 - rough * 0.7})`;
+  const shade = 0.25 - metal * 0.2;
+  const e = m.emissive;
+  const glow = m.emissiveIntensity * Math.max(e.r, e.g, e.b);
+  const layers = [
+    `radial-gradient(circle at 35% 30%, ${hl} 0%, transparent ${spot}%)`,
+    `radial-gradient(circle at 40% 35%, transparent 30%, rgba(0,0,0,${0.55 + metal * 0.25}) 100%)`,
+  ];
+  if (m.texture) layers.push(`url("/project/${m.texture}") center / ${100 / Math.max(0.01, m.tiling)}% repeat`);
+  return (
+    <div className="rs-mat-preview-wrap">
+      <div
+        className="rs-mat-preview"
+        style={{
+          background: `${layers.join(', ')}, ${css(c.r * (1 - shade), c.g * (1 - shade), c.b * (1 - shade))}`,
+          backgroundBlendMode: m.texture ? 'normal, normal, multiply, normal' : undefined,
+          opacity: m.blend === 'Transparent' || m.blend === 'Additive' ? Math.max(0.15, m.opacity) : 1,
+          boxShadow: glow > 0.01 ? `0 0 ${10 + glow * 30}px ${css(e.r, e.g, e.b, Math.min(1, glow))}` : undefined,
+        }}
+      />
+      <div className="rs-hint">
+        {m.blend}
+        {m.unlit ? ' · Unlit' : ''} · metallic {metal.toFixed(2)} · roughness {rough.toFixed(2)}
+      </div>
+    </div>
+  );
+}
+
+/** Play / stop an audio file (WebAudio, the same engine the game uses). */
+function AudioPreview({ path, head, size }: { path: string; head: React.ReactNode; size: number }) {
+  const [playing, setPlaying] = useState<{ stop: () => void } | null>(null);
+  const [info, setInfo] = useState('');
+  const play = async () => {
+    playing?.stop();
+    AudioEngine.resume();
+    const buf = await AudioEngine.load(path);
+    const ctx = AudioEngine.context;
+    if (!buf || !ctx) return setInfo('Cannot decode this file');
+    setInfo(`${buf.duration.toFixed(2)} s · ${buf.numberOfChannels === 1 ? 'mono' : 'stereo'} · ${buf.sampleRate} Hz`);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.onended = () => setPlaying((p) => (p?.stop === stop ? null : p));
+    const stop = () => {
+      try {
+        src.stop();
+      } catch {
+        /* already stopped */
+      }
+    };
+    src.start();
+    setPlaying({ stop });
+  };
+  return (
+    <>
+      {head}
+      <div className="rs-btn-row">
+        <button className="rs-btn" onClick={() => void play()}>
+          <Icons.Play size={12} /> Play
+        </button>
+        <button className="rs-btn" disabled={!playing} onClick={() => (playing?.stop(), setPlaying(null))}>
+          <Icons.Stop size={12} /> Stop
+        </button>
+      </div>
+      <div className="rs-hint">
+        {info || 'Audio clip'} · {(size / 1024).toFixed(1)} KB — assign it to an AudioSource's Clip, or play it from a script with audioSource.playOneShot(path).
+      </div>
+    </>
+  );
+}
+
 /** Prefab instance bar: the prefab, Open / Select, and for the instance root Apply / Revert / Unpack. */
 function PrefabBar({ go }: { go: GameObject }) {
   useTicker(true, 700); // override state follows edits
@@ -323,6 +402,7 @@ function AssetInspector({ path }: { path: string }) {
     return (
       <>
         {head}
+        {u && v.kind === 'Material' ? <MaterialPreview m={u as Material} /> : null}
         {u ? (
           <Section title={Types.nameOf(u.constructor)}>
             {editor.fieldsOf(u).filter((f) => !f.hidden && (!f.visibleIf || f.visibleIf(u))).map((f) => <FieldRow key={f.name} target={u} f={f} />)}
@@ -384,6 +464,7 @@ function AssetInspector({ path }: { path: string }) {
         <img className="rs-preview" src={`/project/${path}`} alt="" />
       </>
     );
+  if (v.kind === 'Audio') return <AudioPreview path={path} head={head} size={file?.size ?? 0} />;
   return (
     <>
       {head}
