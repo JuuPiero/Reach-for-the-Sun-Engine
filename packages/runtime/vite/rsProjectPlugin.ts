@@ -99,6 +99,21 @@ export function rsProjectPlugin(opts: RsProjectPluginOptions): Plugin {
       return null;
     },
 
+    // Games: Rapier's compat build carries its WASM as base64 inside the JS (~3.5 MB of JS to download and parse). Emit the
+    // bytes as a real .wasm file instead (smaller, compressed by servers, compiled while streaming) and pass its URL to
+    // wasm-bindgen's init, which fetches URLs itself.
+    transform(code, id) {
+      if (opts.mode !== 'game' || !/rapier3d-compat[\\/]dist[\\/]rapier\.mjs$/.test(id.split('?')[0])) return null;
+      // `x.toByteArray("<base64>").buffer` → the emitted file's URL (wasm-bindgen fetches a URL string)
+      const m = /(\w+)\.toByteArray\("([A-Za-z0-9+/=]{1000,})"\)(\.buffer)?/.exec(code);
+      if (!m) {
+        this.warn('Rapier: inlined WASM not found, kept as is');
+        return null;
+      }
+      const ref = this.emitFile({ type: 'asset', name: 'rapier3d.wasm', source: Buffer.from(m[2], 'base64') });
+      return { code: code.slice(0, m.index) + `import.meta.ROLLUP_FILE_URL_${ref}` + code.slice(m.index + m[0].length), map: null };
+    },
+
     configureServer(s) {
       server = s;
       // project files under /project/

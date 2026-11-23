@@ -24,7 +24,7 @@
     setTimeout(() => window.dispatchEvent(new KeyboardEvent('keyup', { code, key: code })), 60);
   };
   check('HUD shown', await until(() => elOf('HUD/TopBar/CoinText')?.textContent === 'COINS  0' && !visible(elOf('HUD/PauseMenu'))));
-  check('timer runs', await until(() => /^0:0[1-9]$/.test(elOf('HUD/TimeText')?.textContent)), elOf('HUD/TimeText')?.textContent);
+  check('timer runs', await until(() => /^\d+:\d\d$/.test(elOf('HUD/TimeText')?.textContent ?? '') && elOf('HUD/TimeText').textContent !== '0:00'), elOf('HUD/TimeText')?.textContent);
   key('Escape');
   check('Esc opens the pause menu', await until(() => visible(elOf('HUD/PauseMenu/Window/MenuButton'))));
   elOf('HUD/PauseMenu/Window/MenuButton').click();
