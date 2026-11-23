@@ -156,3 +156,15 @@ parameters / states (renames follow into transitions / initial) / transitions / 
   = mouse button 0), all reset per frame in `_endFrame`.
 - **dontDestroyOnLoad**: root objects flagged `_dontDestroy`; hosts call `old._takePersistent()` (removed without onDestroy) before
   `old.end()`, then `SceneManager._carry(keep, next)` after `next.begin()` (already awoken / started components are not restarted).
+
+## 10. Linked folders / additive scenes
+`Folder.scenePath` + `autoLoad`: the folder's content lives in another `.scn.json`. FolderJson `{ scene, autoLoad?, loaded? }`;
+scene files write only the link (`serializeScene`), editor snapshots write the content inline with `loaded: true`
+(`serializeScene(s, { inlineLinked: true })` — undo, play snapshot, prefab rebuilds; `deserializeScene` restores it without
+fetching). `fillLinkedFolder` reads a scene file into a folder with `ctx.isFree` (keep saved ids unless the scene already uses
+them; references follow the JSON ids) and adds objects through `scene.add` (lifecycle in play). `Folder.loadScene` goes through
+the loader installed by sceneLoader.ts (also loads nested Auto Load links, never a scene inside itself); `sceneFromJson(j, path,
+{ loadAllLinked })` loads Auto Load folders (games) or all (editor). `SceneManager.loadAdditive / unloadAdditive` reuse a linked
+folder of that path or make an `_additive` root folder. Editor: `saveScene` also writes every loaded linked folder
+(`serializeLinkedFolder`), `linkScene` (Hierarchy drop of a scene asset), `setLinkedLoaded`; a changed linked file reloads the
+open scene like a changed scene file.

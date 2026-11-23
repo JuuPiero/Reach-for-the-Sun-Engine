@@ -118,3 +118,7 @@ scripts/e2e/             headless Chrome driver (driver.mjs) + editor / game che
 - Collider signatures in RapierPhysics include the collision groups: anything that affects filtering must be in the signature.
 - The editor's dev server (packages/editor/server, runtime/vite) is Node code: restart the editor after changing it (Vite doesn't
   reload it), e.g. `readProject`.
+- Linked folders (Folder.scenePath): in-memory editor snapshots must use `serializeScene(scene, { inlineLinked: true })` (the
+  `INLINE` constant in Editor.ts) or undo / Stop lose the linked content; files use the plain call and `serializeLinkedFolder`.
+- Game builds rewrite Rapier's inlined base64 WASM into an emitted `.wasm` asset (rsProjectPlugin `transform`): keep the regex in
+  sync when upgrading `@dimforge/rapier3d-compat` (the build warns if it no longer matches).

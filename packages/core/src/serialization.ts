@@ -56,6 +56,11 @@ export interface PrefabOverrides {
 export interface FolderJson {
   name: string;
   active?: boolean;
+  /** Linked scene file (content saved there, not here). */
+  scene?: string;
+  autoLoad?: boolean;
+  /** Editor snapshots: the linked content is inline (folders / gameObjects). */
+  loaded?: boolean;
   folders: FolderJson[];
   gameObjects: GameObjectJson[];
 }
@@ -456,6 +461,8 @@ export interface ReadContext {
   pending: { id: number; set: (g: GameObject | null) => void }[];
   /** Keep saved ids (scenes) or give fresh ones (prefab instances, duplicates). */
   keepIds: boolean;
+  /** With keepIds: keep a saved id only when this says it is free (linked scenes loaded next to other content). */
+  isFree?: (id: number) => boolean;
   /** Fallback for references to objects outside what is read (duplicates within a scene). */
   scene?: Scene | null;
   /** Throw-away objects (canonical prefab data): ids are not reserved. */
@@ -494,7 +501,7 @@ export function deserializeGameObject(j: GameObjectJson, ctx: ReadContext): Game
     if (full) j = full;
     else compact = j;
   }
-  const go = new GameObject(j.name, ctx.keepIds ? j.id : undefined);
+  const go = new GameObject(j.name, ctx.keepIds && (!ctx.isFree || ctx.isFree(j.id)) ? j.id : undefined);
   ctx.ids.set(j.id, go);
   go.tag = j.tag ?? '';
   go.layer = typeof j.layer === 'number' ? j.layer | 0 : 0;
@@ -527,30 +534,84 @@ export function resolveReferences(ctx: ReadContext): void {
 
 // ---- scenes -----------------------------------------------------------------------------------------------------------
 
-function serializeFolder(f: Folder): FolderJson {
-  const j: FolderJson = { name: f.name, folders: f.folders.map(serializeFolder), gameObjects: f.gameObjects.filter((g) => !g.destroyed).map((g) => serializeGameObject(g)) };
+export interface SceneSerializeOptions {
+  /** Write the content of loaded linked folders inline (editor snapshots: undo, play); files keep it in the linked scene. */
+  inlineLinked?: boolean;
+}
+
+function serializeContent(f: Folder, j: FolderJson, opts: SceneSerializeOptions): void {
+  j.folders = f.folders.map((sub) => serializeFolder(sub, opts));
+  j.gameObjects = f.gameObjects.filter((g) => !g.destroyed).map((g) => serializeGameObject(g));
+}
+
+function serializeFolder(f: Folder, opts: SceneSerializeOptions): FolderJson {
+  const j: FolderJson = { name: f.name, folders: [], gameObjects: [] };
   if (!f.active) j.active = false;
+  if (f.scenePath) {
+    j.scene = f.scenePath;
+    if (!f.autoLoad) j.autoLoad = false;
+    if (opts.inlineLinked && f._linkedLoaded) {
+      j.loaded = true;
+      serializeContent(f, j, opts);
+    }
+    return j;
+  }
+  serializeContent(f, j, opts);
   return j;
 }
 
-export function serializeScene(s: Scene): SceneJson {
-  return { format: FORMAT, root: serializeFolder(s.root) };
+export function serializeScene(s: Scene, opts: SceneSerializeOptions = {}): SceneJson {
+  return { format: FORMAT, root: serializeFolder(s.root, opts) };
+}
+
+/** The content of a linked folder as its own scene file. */
+export function serializeLinkedFolder(f: Folder): SceneJson {
+  const root: FolderJson = { name: 'Root', folders: [], gameObjects: [] };
+  serializeContent(f, root, {});
+  return { format: FORMAT, root };
+}
+
+function readFolderContent(fj: FolderJson, into: Folder, ctx: ReadContext, add: (go: GameObject, f: Folder) => void): void {
+  for (const sub of fj.folders ?? []) {
+    const f = into.addFolder(sub.name);
+    f.active = sub.active !== false;
+    if (sub.scene) {
+      f.scenePath = sub.scene;
+      f.autoLoad = sub.autoLoad !== false;
+      if (!sub.loaded) continue;
+      f._linkedLoaded = true;
+    }
+    readFolderContent(sub, f, ctx, add);
+  }
+  for (const gj of fj.gameObjects ?? []) add(deserializeGameObject(gj, ctx), into);
 }
 
 export function deserializeScene(j: SceneJson, name = 'Scene'): Scene {
   const s = new Scene(name);
   const ctx = newReadContext(true, s);
+  const root = j.root ?? { name: 'Root', folders: [], gameObjects: [] };
+  s.root.active = root.active !== false;
+  readFolderContent(root, s.root, ctx, (go, f) => f.add(go));
   let maxId = 0;
-  const readFolder = (fj: FolderJson, into: Folder) => {
-    into.active = fj.active !== false;
-    for (const sub of fj.folders ?? []) readFolder(sub, into.addFolder(sub.name));
-    for (const gj of fj.gameObjects ?? []) into.add(deserializeGameObject(gj, ctx));
-  };
-  readFolder(j.root ?? { name: 'Root', folders: [], gameObjects: [] }, s.root);
   for (const id of ctx.ids.keys()) maxId = Math.max(maxId, id);
   _reserveIds(maxId);
   resolveReferences(ctx);
   return s;
+}
+
+/**
+ * Fills a linked folder with a scene file's content (its root folder's folders / objects). Saved ids are kept unless another
+ * object of the scene already has them; objects join the lifecycle like instantiated ones when the scene is playing.
+ */
+export function fillLinkedFolder(f: Folder, j: SceneJson): void {
+  const s = f.scene;
+  const ctx = newReadContext(true, s);
+  ctx.isFree = (id) => !ctx.ids.has(id) && !s?.findById(id);
+  const added: { go: GameObject; f: Folder }[] = [];
+  readFolderContent(j.root ?? { name: 'Root', folders: [], gameObjects: [] }, f, ctx, (go, into) => added.push({ go, f: into }));
+  resolveReferences(ctx);
+  f._linkedLoaded = true;
+  for (const a of added) (s ? s.add(a.go, a.f) : a.f.add(a.go));
 }
 
 // ---- UserData ---------------------------------------------------------------------------------------------------------

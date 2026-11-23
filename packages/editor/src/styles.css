@@ -396,3 +396,6 @@ button:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 .rs-layer-select { max-width: 110px; }
 .rs-mat-preview-wrap { display: flex; flex-direction: column; align-items: center; padding: 10px 0 2px; }
 .rs-mat-preview { width: 110px; height: 110px; border-radius: 50%; border: 1px solid #000; }
+.rs-row-badge.linked { color: #c9a2ff; border-color: #6f4fa8; }
+.rs-row-badge.unloaded { opacity: 0.6; }
+.rs-linked-path { color: #c9a2ff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

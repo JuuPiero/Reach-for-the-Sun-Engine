@@ -1,6 +1,6 @@
 import { Prefab } from './Prefab';
 import type { GameObject } from './GameObject';
-import type { Scene } from './Scene';
+import type { Folder, Scene } from './Scene';
 
 /** Size of the game view in CSS pixels (set by the host: player, editor Runtime view). */
 export const Screen = {
@@ -41,6 +41,36 @@ export const SceneManager = {
   load(path: string): Promise<Scene> {
     if (!host) return Promise.reject(new Error('SceneManager.load: no scene host (player / editor)'));
     return host.load(path);
+  },
+  /**
+   * Adds a scene's content to the playing one (streaming a level section, a UI scene…): into the linked folder of that path if the
+   * scene has one, else into a new root folder named after the file. Resolves with the folder.
+   */
+  async loadAdditive(path: string): Promise<Folder> {
+    const s = active;
+    if (!s) throw new Error('SceneManager.loadAdditive: no active scene');
+    let f = [...s.root.allFolders()].find((x) => x.scenePath === path) ?? null;
+    if (!f) {
+      f = s.root.addFolder(path.slice(path.lastIndexOf('/') + 1).replace(/\.scn\.json$/, ''));
+      f.scenePath = path;
+      f.autoLoad = false;
+      f._additive = true;
+      s.version++;
+    }
+    await f.loadScene();
+    return f;
+  },
+  /** Removes additively loaded content (a folder created by loadAdditive disappears; a linked folder stays, empty). */
+  unloadAdditive(pathOrFolder: string | Folder): void {
+    const s = active;
+    if (!s) return;
+    const f = typeof pathOrFolder === 'string' ? [...s.root.allFolders()].find((x) => x.scenePath === pathOrFolder) : pathOrFolder;
+    if (!f) return;
+    f.unloadScene();
+    if (f._additive) {
+      f.parent?.removeFolder(f);
+      s.version++;
+    }
   },
   /** Keeps an object (its root, with children) alive when SceneManager.load switches scenes: it moves into the new scene with its
    * state (no onDestroy, no new start). Timers / tweens it had on the old scene are dropped. */

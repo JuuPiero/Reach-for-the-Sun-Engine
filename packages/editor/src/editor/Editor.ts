@@ -34,6 +34,7 @@ import {
   isUserDataPath,
   userDataExt,
   emptyFsm,
+  serializeLinkedFolder,
   ProjectSettings,
   type ProjectSettingsJson,
   newReadContext,
@@ -70,6 +71,9 @@ interface UndoEntry {
   selection: number[];
   time: number;
 }
+
+/** In-memory snapshots (undo, play, rebuilds) keep linked folders' content inline. */
+const INLINE = { inlineLinked: true };
 
 export class Editor {
   projectName = '';
@@ -156,10 +160,10 @@ export class Editor {
     } else if (kind === 'change' && (isUserDataPath(path) || path.endsWith('.fsm.json'))) {
       Assets.invalidate(path);
       if (path === this.selectedAsset) void this.selectAsset(path);
-    } else if (kind === 'change' && path === this.scene.path) {
+    } else if (kind === 'change' && (path === this.scene.path || [...this.scene.root.allFolders()].some((f) => f.scenePath === path && f.sceneLoaded))) {
       // the open scene was written by someone else (another editor, a text editor, git)
       if (this.dirty || this.mode !== 'edit') Debug.warn(`${path} changed on disk; saving now would overwrite those changes (File ▸ Reload Scene to take them)`);
-      else void this.openScene(path, true).then(() => Debug.log(`${path} reloaded (changed on disk)`));
+      else if (this.scene.path) void this.openScene(this.scene.path, true).then(() => Debug.log(`${path} changed on disk: scene reloaded`));
     }
     clearTimeout(this.refreshTimer);
     this.refreshTimer = window.setTimeout(() => void this.refreshFiles(), 120);
@@ -178,10 +182,10 @@ export class Editor {
   /** Project scripts were edited / added: rebuild the scene so its components are instances of the new classes. */
   private async reloadScripts(): Promise<void> {
     if (this.mode !== 'edit') this.stop();
-    const j = serializeScene(this.scene);
+    const j = serializeScene(this.scene, INLINE);
     const path = this.scene.path;
     Assets.invalidate();
-    const s = await sceneFromJson(j, path);
+    const s = await sceneFromJson(j, path, { loadAllLinked: true });
     this.setScene(s, false);
     if (this.selectedAsset) await this.selectAsset(this.selectedAsset);
     Debug.log('Scripts reloaded');
@@ -237,7 +241,7 @@ export class Editor {
     try {
       Assets.invalidate(path);
       const j = await Assets.loadJson<SceneJson>(path);
-      const s = await sceneFromJson(j, path);
+      const s = await sceneFromJson(j, path, { loadAllLinked: true });
       this.setScene(s, true);
       this.setDirty(false);
     } catch (e) {
@@ -258,12 +262,46 @@ export class Editor {
       path = `${this.currentFolder()}/${name.replace(/[\\/:*?"<>|]/g, '_')}.scn.json`;
     }
     await this.write(path, serializeScene(this.scene));
+    // linked folders: their content goes back to their own scene files
+    const linked = [...this.scene.root.allFolders()].filter((f) => f.scenePath && f.sceneLoaded && f.scenePath !== path);
+    for (const f of linked) await this.write(f.scenePath!, serializeLinkedFolder(f));
     this.scene.path = path;
     this.scene.name = path.slice(path.lastIndexOf('/') + 1).replace(/\.scn\.json$/, '');
     this.setDirty(false);
     this.emit('scene');
-    Debug.log(`Saved ${path}`);
+    Debug.log(`Saved ${path}${linked.length ? ` (+ ${linked.map((f) => f.scenePath).join(', ')})` : ''}`);
     await this.refreshFiles();
+  }
+
+  /** Links a scene file into a folder of the open scene (RE sub-scene); its content shows and saves back to that file. */
+  async linkScene(path: string, parent: Folder | null = null): Promise<Folder | null> {
+    if (path === this.scene.path) {
+      Debug.warn('A scene cannot contain itself');
+      return null;
+    }
+    this.recordUndo('Link Scene');
+    const into = parent ?? this.scene.root;
+    const f = into.addFolder(this.uniqueName(path.slice(path.lastIndexOf('/') + 1).replace(/\.scn\.json$/, ''), into.folders));
+    f.scenePath = path;
+    try {
+      Assets.invalidate(path);
+      await f.loadScene();
+    } catch (e) {
+      Debug.error(`Cannot load ${path}: ${(e as Error).message}`);
+    }
+    this.selectFolder(f.path);
+    this.changed(true);
+    return f;
+  }
+
+  /** Loads / unloads a linked folder's content in the editor (unloaded content is not saved: the file keeps it). */
+  async setLinkedLoaded(f: Folder, loaded: boolean): Promise<void> {
+    this.recordUndo(loaded ? 'Load Linked Scene' : 'Unload Linked Scene');
+    if (loaded) {
+      if (f.scenePath) Assets.invalidate(f.scenePath);
+      await f.loadScene();
+    } else f.unloadScene();
+    this.changed(true);
   }
 
   private confirmDiscard(): boolean {
@@ -286,7 +324,7 @@ export class Editor {
       top.time = now;
       return;
     }
-    this.undoStack.push({ label, scene: serializeScene(this.scene), selection: [...this.selection], time: now });
+    this.undoStack.push({ label, scene: serializeScene(this.scene, INLINE), selection: [...this.selection], time: now });
     if (this.undoStack.length > 200) this.undoStack.shift();
     this.redoStack = [];
   }
@@ -312,7 +350,7 @@ export class Editor {
     if (this.mode !== 'edit') return;
     const e = from.pop();
     if (!e) return;
-    to.push({ label: e.label, scene: serializeScene(this.scene), selection: [...this.selection], time: 0 });
+    to.push({ label: e.label, scene: serializeScene(this.scene, INLINE), selection: [...this.selection], time: 0 });
     const s = deserializeScene(e.scene, this.scene.name);
     s.path = this.scene.path;
     this.selection = e.selection;
@@ -589,7 +627,7 @@ export class Editor {
       return;
     }
     if (this.mode !== 'edit') return;
-    this.playSnapshot = serializeScene(this.scene);
+    this.playSnapshot = serializeScene(this.scene, INLINE);
     this.playScenePath = this.scene.path;
     this.playSceneName = this.scene.name;
     Application._reset();
@@ -740,7 +778,7 @@ export class ${finalName} extends Behavior {
     if (this.prefabMode && !(await this.closePrefab())) return;
     const pf = await Assets.loadPrefab(path);
     if (!pf?.data) return;
-    const back = { json: serializeScene(this.scene), path: this.scene.path, name: this.scene.name, dirty: this.dirty, selection: [...this.selection], undo: this.undoStack, redo: this.redoStack };
+    const back = { json: serializeScene(this.scene, INLINE), path: this.scene.path, name: this.scene.name, dirty: this.dirty, selection: [...this.selection], undo: this.undoStack, redo: this.redoStack };
     const name = path.slice(path.lastIndexOf('/') + 1).replace(/\.pfb\.json$/, '');
     const s = new Scene(name);
     const ctx = newReadContext(true, s);
@@ -814,7 +852,7 @@ export class ${finalName} extends Behavior {
     const pf = path ? Assets.getPrefab(path) : null;
     if (!path || !pf?.data) return;
     this.recordUndo('Apply Prefab');
-    const sceneJson = serializeScene(this.scene);
+    const sceneJson = serializeScene(this.scene, INLINE);
     // the instance in the prefab's id space: its own objects keep their prefab ids, added ones get new ones
     let maxPid = 0;
     const visit = (n: GameObjectJson) => ((maxPid = Math.max(maxPid, n.id)), n.children.forEach(visit));
@@ -855,7 +893,7 @@ export class ${finalName} extends Behavior {
   revertPrefab(go: GameObject): void {
     if (!go.prefab) return;
     this.recordUndo('Revert Prefab');
-    const sceneJson = serializeScene(this.scene);
+    const sceneJson = serializeScene(this.scene, INLINE);
     const node = findObjectJson(sceneJson, go.id);
     if (node?.overrides) node.overrides = { ids: node.overrides.ids };
     this.rebuildScene(sceneJson);
@@ -878,7 +916,7 @@ export class ${finalName} extends Behavior {
       await Assets.reloadPrefab(path); // play: Stop rebuilds the scene from its (compact) snapshot with the new data
       return;
     }
-    const json = serializeScene(this.scene); // compared with the old data
+    const json = serializeScene(this.scene, INLINE); // compared with the old data
     await Assets.reloadPrefab(path);
     this.rebuildScene(json);
     Debug.log(`${path} changed: instances updated`);

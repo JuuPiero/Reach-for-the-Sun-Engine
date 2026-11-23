@@ -217,6 +217,18 @@ Enter). Âm thanh / texture do `scripts/gen-demo-sounds.mjs` / `scripts/gen-demo
 Edit ▸ **Project Settings…**: General (scene khởi động của game), Physics (trọng lực, bước vật lý, tên 16 layer, ma trận va
 chạm), Input (actions). Thay đổi áp dụng ngay trong editor; **Save** ghi vào `rs.project.json` (game build đọc cùng file).
 
+## Scene con / tải thêm scene (additive)
+
+- Một **Folder có thể liên kết tới một file scene khác** (kiểu RE): kéo file `.scn.json` từ AssetBrowser thả vào Hierarchies. Nội
+  dung folder nằm trong file đó: editor nạp ra để sửa, Save Scene ghi lại cả file scene con; scene chính chỉ lưu đường liên kết.
+  Hierarchies hiện icon scene + nhãn `scn`; Inspector của folder có Auto Load, Load / Unload, Open Scene.
+- **Auto Load** (mặc định bật): game nạp nội dung cùng scene. Tắt đi để script tự nạp khi cần: `folder.loadScene()`,
+  `folder.unloadScene()`, `folder.sceneLoaded`.
+- `await SceneManager.loadAdditive('Assets/Scenes/Ui.scn.json')`: thêm nội dung một scene vào scene đang chơi (vào folder liên kết
+  của file đó nếu có, không thì một folder mới), `SceneManager.unloadAdditive(đườngDẫn)` để gỡ. Object mới chạy awake / start
+  như object được instantiate; id trùng với object đang có sẽ được cấp id mới.
+- Demo: folder Props của Main là scene con `Assets/Scenes/Props.scn.json`.
+
 ## Giữ object khi đổi scene
 
 `SceneManager.dontDestroyOnLoad(gameObject)`: object (gốc của nó, cùng các con) chuyển sang scene mới khi `SceneManager.load`,
@@ -225,5 +237,5 @@ scene cũ bị huỷ.
 
 ## Giới hạn hiện tại (mốc 5)
 
-Chưa có nhiều scene cùng lúc (additive), skinned mesh / root motion, prefab lồng nhau. Material dùng ánh sáng Blinn-Phong
+Chưa có skinned mesh / root motion, prefab lồng nhau. Material dùng ánh sáng Blinn-Phong
 (Metallic / Roughness được quy đổi, chưa có phản chiếu môi trường). Game dùng vật lý nặng thêm ~3,5 MB (Rapier bản nhúng WASM).

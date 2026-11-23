@@ -10,6 +10,12 @@ import type { SceneTimer, Tween } from './Tween';
  * GameObjects. Play mode runs the components' lifecycle: awake (when created), start (before the first update), update,
  * lateUpdate, onDestroy (destruction is deferred to the end of the frame).
  */
+let folderLoader: ((f: Folder) => Promise<void>) | null = null;
+/** @internal installed by sceneLoader.ts (serialization would be an import cycle). */
+export function _setFolderLoader(f: (folder: Folder) => Promise<void>): void {
+  folderLoader = f;
+}
+
 export class Folder {
   name: string;
   /** Inactive folders neither update nor draw anything inside (RE's folder activation). */
@@ -18,9 +24,41 @@ export class Folder {
   readonly gameObjects: GameObject[] = [];
   parent: Folder | null = null;
   /** @internal */ _scene: Scene | null = null;
+  /**
+   * Linked scene (RE: a folder streaming a sub-scene): the folder's content lives in that `.scn.json` and is loaded / unloaded
+   * at run time (`loadScene` / `unloadScene`, `SceneManager.loadAdditive`). The editor loads it for editing and saves it back.
+   */
+  scenePath: string | null = null;
+  /** Load the linked scene when the scene is loaded (game). Off = scripts load it when needed. */
+  autoLoad = true;
+  /** @internal the linked content is in the folder. */
+  _linkedLoaded = false;
+  /** @internal created by SceneManager.loadAdditive (removed again on unload). */
+  _additive = false;
+  private _loading: Promise<void> | null = null;
 
   constructor(name = 'Folder') {
     this.name = name;
+  }
+
+  get sceneLoaded(): boolean {
+    return this._linkedLoaded;
+  }
+  /** Loads the linked scene's content into this folder (objects start like instantiated ones in play mode). */
+  loadScene(): Promise<void> {
+    if (!this.scenePath || this._linkedLoaded) return Promise.resolve();
+    if (!folderLoader) return Promise.reject(new Error('Folder.loadScene: core not initialised'));
+    this._loading ??= folderLoader(this).finally(() => (this._loading = null));
+    return this._loading;
+  }
+  /** Removes the linked content (onDestroy in play mode). */
+  unloadScene(): void {
+    if (!this.scenePath || !this._linkedLoaded) return;
+    const s = this.scene;
+    for (const f of [...this.allFolders()]) for (const g of [...f.gameObjects]) (s ? s.destroy(g) : f.remove(g));
+    for (const f of [...this.folders]) this.removeFolder(f);
+    this._linkedLoaded = false;
+    if (s) s.version++;
   }
 
   get scene(): Scene | null {

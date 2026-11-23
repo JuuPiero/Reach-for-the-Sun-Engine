@@ -145,6 +145,7 @@ export function Hierarchies() {
     const asset = e.dataTransfer.getData(DT_ASSET);
     if (asset) {
       if (asset.endsWith('.pfb.json')) void editor.instantiatePrefab(asset, 'parent' in target ? target.parent : target.folder);
+      else if (asset.endsWith('.scn.json') && 'folder' in target) void editor.linkScene(asset, target.folder);
       return;
     }
     const folderPath = e.dataTransfer.getData(DT_FOLDER);
@@ -188,7 +189,7 @@ export function Hierarchies() {
           const selected = r.kind === 'object' ? editor.selection.includes(r.go.id) : editor.selectedFolder === r.folder.path;
           const hasKids = r.kind === 'object' ? r.go.children.length > 0 : r.folder.folders.length + r.folder.gameObjects.length > 0;
           const off = r.kind === 'object' ? !r.go.activeInHierarchy : !r.folder.activeInHierarchy;
-          const Icon = r.kind === 'folder' ? (collapsed.has(r.key) ? Icons.Folder : Icons.FolderOpen) : objectIcon(r.go.components.map((c) => Types.nameOf(c.constructor)));
+          const Icon = r.kind === 'folder' ? (r.folder.scenePath ? Icons.Scene : collapsed.has(r.key) ? Icons.Folder : Icons.FolderOpen) : objectIcon(r.go.components.map((c) => Types.nameOf(c.constructor)));
           const dz = drop?.key === r.key ? ` drop-${drop.zone}` : '';
           const pf = r.kind === 'object' ? (r.go.prefab ? ' prefab-root' : editor.prefabRootOf(r.go) ? ' prefab-part' : '') : '';
           return (
@@ -231,6 +232,7 @@ export function Hierarchies() {
                 <span className="rs-row-name">{r.kind === 'object' ? r.go.name : r.folder.name}</span>
               )}
               {r.kind === 'object' && r.go.prefab ? <span className="rs-row-badge" title={r.go.prefab}>pfb</span> : null}
+              {r.kind === 'folder' && r.folder.scenePath ? <span className={`rs-row-badge linked${r.folder.sceneLoaded ? '' : ' unloaded'}`} title={r.folder.scenePath}>{r.folder.sceneLoaded ? 'scn' : 'scn (unloaded)'}</span> : null}
             </div>
           );
         })}

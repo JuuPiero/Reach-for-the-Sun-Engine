@@ -322,3 +322,85 @@ test('SceneManager.dontDestroyOnLoad: the object moves to the next scene with it
   b.end();
   assert.deepEqual(log, ['start', 'destroy']);
 });
+
+test('linked folders / additive scenes: auto load, id clashes, play lifecycle, unload, snapshots inline, files keep links', async () => {
+  const { Assets, sceneFromJson, serializeScene, deserializeScene, serializeLinkedFolder, SceneManager } = core;
+  const T = { p: [0, 0, 0], r: [0, 0, 0, 1], s: [1, 1, 1] };
+  const started: string[] = [];
+  class Mark extends Behavior {
+    @core.field({ type: 'gameobject' }) other: GameObject | null = null;
+    start(): void {
+      started.push(this.gameObject.name);
+    }
+  }
+  core.Types.register(Mark, 'Mark', 'component');
+  const files: Record<string, unknown> = {
+    'Assets/Main.scn.json': {
+      format: 1,
+      root: {
+        name: 'Root',
+        folders: [
+          { name: 'Level', scene: 'Assets/Level.scn.json', folders: [], gameObjects: [] },
+          { name: 'Extra', scene: 'Assets/Extra.scn.json', autoLoad: false, folders: [], gameObjects: [] },
+        ],
+        gameObjects: [{ id: 1, name: 'Hero', transform: T, components: [{ type: 'Mark', fields: {} }], children: [] }],
+      },
+    },
+    // id 1 clashes with Hero: gets a fresh id, its internal reference follows
+    'Assets/Level.scn.json': {
+      format: 1,
+      root: { name: 'Root', folders: [{ name: 'Props', folders: [], gameObjects: [{ id: 2, name: 'Box', transform: T, components: [], children: [] }] }], gameObjects: [{ id: 1, name: 'Door', transform: T, components: [{ type: 'Mark', fields: { other: 2 } }], children: [] }] },
+    },
+    'Assets/Extra.scn.json': { format: 1, root: { name: 'Root', folders: [], gameObjects: [{ id: 5, name: 'Bonus', transform: T, components: [{ type: 'Mark', fields: {} }], children: [] }] } },
+  };
+  (globalThis as { fetch: unknown }).fetch = async (url: string) => {
+    const p = decodeURIComponent(url);
+    return p in files ? { ok: true, json: async () => structuredClone(files[p]) } : { ok: false, status: 404 };
+  };
+  Assets.invalidate();
+  const s = await sceneFromJson(files['Assets/Main.scn.json'] as never, 'Assets/Main.scn.json');
+  const level = s.root.findFolder('Level')!;
+  const extra = s.root.findFolder('Extra')!;
+  assert.ok(level.sceneLoaded && !extra.sceneLoaded, 'auto load only');
+  const door = s.find('Door')!;
+  assert.notEqual(door.id, 1, 'clashing id replaced');
+  assert.equal(door.getComponent(Mark)!.other, s.find('Box'), 'reference inside the linked scene kept');
+  assert.equal(s.find('Box')!.id, 2);
+  // the scene file keeps only the links
+  const saved = serializeScene(s);
+  assert.deepEqual(saved.root.folders[0], { name: 'Level', scene: 'Assets/Level.scn.json', folders: [], gameObjects: [] });
+  assert.equal(saved.root.folders[1].autoLoad, false);
+  // the linked content as its own file
+  const lf = serializeLinkedFolder(level);
+  assert.deepEqual(lf.root.gameObjects.map((g) => g.name), ['Door']);
+  assert.deepEqual(lf.root.folders[0].gameObjects.map((g) => g.name), ['Box']);
+  // editor snapshots carry the content inline and restore it without fetching
+  const snap = serializeScene(s, { inlineLinked: true });
+  assert.equal(snap.root.folders[0].loaded, true);
+  const back = deserializeScene(snap, 'Main');
+  assert.ok(back.root.findFolder('Level')!.sceneLoaded && back.find('Door')!.id === door.id && back.find('Door')!.getComponent(Mark)!.other === back.find('Box'));
+  // play: additive load starts the new objects; unload destroys them
+  SceneManager._setActive(s);
+  s.begin();
+  s.step(0.016);
+  assert.deepEqual(started.sort(), ['Door', 'Hero']);
+  const f = await SceneManager.loadAdditive('Assets/Extra.scn.json');
+  assert.equal(f, extra);
+  s.step(0.016);
+  assert.ok(started.includes('Bonus'));
+  const ui = await SceneManager.loadAdditive('Assets/Level.scn.json'); // already loaded: same folder, nothing duplicated
+  assert.equal(ui, level);
+  assert.equal([...s.allGameObjects()].filter((g) => g.name === 'Door').length, 1);
+  SceneManager.unloadAdditive('Assets/Extra.scn.json');
+  s.step(0.016);
+  assert.equal(s.find('Bonus'), null);
+  assert.ok(s.root.findFolder('Extra'), 'a linked folder of the scene stays');
+  // a scene not linked anywhere: a new folder, removed on unload
+  files['Assets/Ui.scn.json'] = { format: 1, root: { name: 'Root', folders: [], gameObjects: [{ id: 9, name: 'Hud', transform: T, components: [], children: [] }] } };
+  await SceneManager.loadAdditive('Assets/Ui.scn.json');
+  assert.ok(s.find('Hud') && s.root.findFolder('Ui'));
+  SceneManager.unloadAdditive('Assets/Ui.scn.json');
+  s.step(0.016);
+  assert.equal(s.root.findFolder('Ui'), null);
+  s.end();
+});

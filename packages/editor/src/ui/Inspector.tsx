@@ -42,6 +42,41 @@ export function Inspector() {
               />
             </div>
           </div>
+          {f.scenePath ? (
+            <>
+              <div className="rs-field-header">Linked Scene</div>
+              <div className="rs-field">
+                <label>Scene</label>
+                <div className="rs-field-value rs-linked-path" title={f.scenePath}>
+                  {f.scenePath}
+                </div>
+              </div>
+              <div className="rs-field">
+                <label>Auto Load</label>
+                <div className="rs-field-value">
+                  <input
+                    type="checkbox"
+                    checked={f.autoLoad}
+                    title="Load with the scene in games (off: scripts call folder.loadScene() / SceneManager.loadAdditive)"
+                    onChange={(e) => {
+                      editor.recordUndo('Auto Load');
+                      f.autoLoad = e.target.checked;
+                      editor.changed(true);
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="rs-btn-row">
+                <button className="rs-btn" onClick={() => void editor.setLinkedLoaded(f, !f.sceneLoaded)}>
+                  {f.sceneLoaded ? 'Unload' : 'Load'}
+                </button>
+                <button className="rs-btn" onClick={() => void editor.openScene(f.scenePath!)}>
+                  Open Scene
+                </button>
+              </div>
+              <div className="rs-hint">Its content is saved to {f.scenePath} when the scene is saved{f.sceneLoaded ? '' : ' (not loaded: the file is left as it is)'}.</div>
+            </>
+          ) : null}
           <div className="rs-hint">
             {f.gameObjects.length} objects, {f.folders.length} folders
           </div>
