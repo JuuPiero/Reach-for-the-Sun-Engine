@@ -35,6 +35,9 @@ export interface GameObjectJson {
   children: GameObjectJson[];
   /** Prefab instance root saved compactly: the differences from the prefab (components / children are then empty). */
   overrides?: PrefabOverrides;
+  /** @internal canonical prefab trees: root of a nested prefab (its path) / id in that prefab's file (never saved). */
+  npf?: string;
+  npid?: number;
   /** @internal expanded instances: id of the object in the prefab file (never saved). */
   pid?: number;
 }
@@ -210,31 +213,58 @@ export function serializeGameObject(go: GameObject, opts: SerializeOptions = {})
 
 // ---- prefab instances ---------------------------------------------------------------------------------------------------
 
-const canonicalCache = new WeakMap<PrefabJson, GameObjectJson>();
+/** Canonical trees per prefab data, with the nested prefabs' data they were built from (stale when one of those changes). */
+const canonicalCache = new WeakMap<PrefabJson, { tree: GameObjectJson; deps: [string, PrefabJson][] }>();
 const canonicalBusy = new Set<PrefabJson>();
+/** Prefab data used while expanding (canonicalPrefab records its nested prefabs). */
+let depCollector: Map<string, PrefabJson> | null = null;
+
+/** Deterministic ids for objects of a nested prefab that the outer prefab's file doesn't list yet (stable across sessions). */
+const nestedId = (outer: number, pid: number) => 1_000_000_000 + ((Math.imul(outer, 2654435761) ^ Math.imul(pid + 1, 40503)) >>> 0) % 1_000_000_000;
+
 /**
  * A prefab's tree with every field written (read + written back once): the base that instances are compared with. Ids are the
- * prefab file's ids (pids). Nested prefab instances inside a prefab are flattened.
+ * prefab file's ids (pids). Prefabs nested inside it are expanded (their latest data) and annotated: `npf` on a nested root,
+ * `npid` = the object's id in the nested prefab's file.
  */
 export function canonicalPrefab(data: PrefabJson): GameObjectJson {
-  let c = canonicalCache.get(data);
-  if (!c) {
-    if (canonicalBusy.has(data)) throw new Error('prefab contains itself');
-    canonicalBusy.add(data);
-    try {
-      const ctx = newReadContext(true, null);
-      ctx.temp = true;
-      const root = { ...data.gameObject };
-      if (!root.overrides) delete root.prefab; // a prefab file's root is not an instance of anything
-      const go = deserializeGameObject(root, ctx);
-      resolveReferences(ctx);
-      c = serializeGameObject(go, { flatten: true });
-      canonicalCache.set(data, c);
-    } finally {
-      canonicalBusy.delete(data);
-    }
+  const hit = canonicalCache.get(data);
+  if (hit && hit.deps.every(([p, d]) => Assets.getPrefab(p)?.data === d)) return hit.tree;
+  if (canonicalBusy.has(data)) throw new Error('prefab contains itself');
+  canonicalBusy.add(data);
+  const outer = depCollector;
+  const deps = new Map<string, PrefabJson>();
+  depCollector = deps;
+  try {
+    const ctx = newReadContext(true, null);
+    ctx.temp = true;
+    const root = { ...data.gameObject };
+    if (!root.overrides) delete root.prefab; // a prefab file's root is not an instance of anything
+    const go = deserializeGameObject(root, ctx);
+    resolveReferences(ctx);
+    const tree = annotatedJson(go);
+    canonicalCache.set(data, { tree, deps: [...deps] });
+    return tree;
+  } finally {
+    depCollector = outer;
+    if (outer) for (const [p, d] of deps) outer.set(p, d);
+    canonicalBusy.delete(data);
   }
-  return c;
+}
+
+/** Full tree of a prefab's root with nested instances expanded and annotated (npf / npid). */
+function annotatedJson(root: GameObject): GameObjectJson {
+  const rec = (g: GameObject, nested: boolean, top: boolean): GameObjectJson => {
+    const nestedRoot = !top && !!g.prefab;
+    const j = plainJson(g, () => null as never);
+    if (nestedRoot) {
+      j.npf = g.prefab!;
+      if (g._prefabId !== null) j.npid = g._prefabId;
+    } else if (nested && g._prefabId !== null) j.npid = g._prefabId;
+    j.children = g.children.filter((c) => !c.destroyed).map((c) => rec(c, (nestedRoot || nested) && ownedBy(c), false));
+    return j;
+  };
+  return rec(root, false, true);
 }
 
 /** Full JSON of a new instance of a prefab (prefab ids kept as `pid`s). */
@@ -272,12 +302,12 @@ function remapRefs(comps: ComponentJson[], map: Map<number, number>): void {
  * The prefab's canonical tree moved into the instance's id space: pids → scene ids (`ids`, fresh ids from `alloc` for objects the
  * instance doesn't know yet), internal references remapped, `pid` kept on every node.
  */
-function prefabInSceneSpace(data: PrefabJson, ids: Record<string, number>, alloc: () => number, removed: Set<number>): GameObjectJson {
+function prefabInSceneSpace(data: PrefabJson, ids: Record<string, number>, alloc: (pid: number) => number, removed: Set<number>): GameObjectJson {
   const tree = clone(canonicalPrefab(data));
   const map = new Map<number, number>();
   const walk = (n: GameObjectJson) => {
     n.pid = n.id;
-    n.id = ids[n.id] ?? alloc();
+    n.id = ids[n.id] ?? alloc(n.id);
     map.set(n.pid, n.id);
     n.children = n.children.filter((c) => !removed.has(c.id));
     n.children.forEach(walk);
@@ -292,9 +322,10 @@ function prefabInSceneSpace(data: PrefabJson, ids: Record<string, number>, alloc
 }
 
 /** Full JSON (with `pid`s) of a compact instance; null if its prefab is not loaded. */
-export function expandInstance(j: GameObjectJson, alloc: () => number): GameObjectJson | null {
+export function expandInstance(j: GameObjectJson, alloc: (pid: number) => number): GameObjectJson | null {
   const pf = j.prefab ? Assets.getPrefab(j.prefab) : null;
   if (!pf?.data || !j.overrides) return null;
+  depCollector?.set(j.prefab!, pf.data);
   const o = j.overrides;
   const tree = prefabInSceneSpace(pf.data, o.ids ?? {}, alloc, new Set(o.removed ?? []));
   const byPid = new Map<number, GameObjectJson>();
@@ -349,15 +380,28 @@ export function expandInstance(j: GameObjectJson, alloc: () => number): GameObje
 /** Whether `child` is part of `root`'s instance (not added to it, not another instance). */
 const ownedBy = (child: GameObject) => child._prefabId !== null && !child.prefab;
 
+/** How collapseInstance reads an instance (its own marks, or a nested prefab's marks inside another instance). */
+export interface InstanceAccess {
+  /** Id of an object in the prefab's file (null = not part of it). */
+  pid(g: GameObject): number | null;
+  /** A child belongs to the instance (else it is added to it). */
+  owned(c: GameObject): boolean;
+  prefab: string;
+}
+const rootAccess = (go: GameObject): InstanceAccess => ({ pid: (g) => g._prefabId, owned: ownedBy, prefab: go.prefab! });
+/** The prefab nested at `root` inside an instance: objects marked with `_nestedPid`. */
+const nestedAccess = (root: GameObject): InstanceAccess => ({ pid: (g) => g._nestedPid, owned: (c) => c._nestedPid !== null && !c._nestedPrefab && !c.prefab, prefab: root._nestedPrefab! });
+
 /** Compact JSON of an instance root: what differs from the prefab. */
-export function collapseInstance(go: GameObject, data: PrefabJson): GameObjectJson {
+export function collapseInstance(go: GameObject, data: PrefabJson, acc: InstanceAccess = rootAccess(go)): GameObjectJson {
   const ids: Record<string, number> = {};
   const live = new Map<number, GameObject>();
   const gather = (g: GameObject) => {
-    if (g._prefabId === null) return;
-    ids[g._prefabId] = g.id;
-    live.set(g._prefabId, g);
-    for (const c of g.children) if (!c.destroyed && ownedBy(c)) gather(c);
+    const pid = acc.pid(g);
+    if (pid === null) return;
+    ids[pid] = g.id;
+    live.set(pid, g);
+    for (const c of g.children) if (!c.destroyed && acc.owned(c)) gather(c);
   };
   gather(go);
   const expected = prefabInSceneSpace(data, ids, () => -1, new Set());
@@ -402,13 +446,13 @@ export function collapseInstance(go: GameObject, data: PrefabJson): GameObjectJs
     if (Object.keys(comps).length) m.comps = comps;
     if (Object.keys(m).length) (o.objects ??= {})[pid] = m;
     // children added to this object
-    const extra = g.children.filter((c) => !c.destroyed && !ownedBy(c)).map((c) => serializeGameObject(c));
+    const extra = g.children.filter((c) => !c.destroyed && !acc.owned(c)).map((c) => serializeGameObject(c));
     if (extra.length) (o.added ??= {})[pid] = extra;
     for (const c of e.children) diff(c, false);
   };
   diff(expected, true);
   if (removed.length) o.removed = removed;
-  const j: GameObjectJson = { id: go.id, name: go.name, prefab: go.prefab!, transform: transformJson(go), components: [], children: [], overrides: o };
+  const j: GameObjectJson = { id: go.id, name: go.name, prefab: acc.prefab, transform: transformJson(go), components: [], children: [], overrides: o };
   if (go.tag) j.tag = go.tag;
   if (go.layer) j.layer = go.layer;
   if (!go.updateSelf) j.update = false;
@@ -436,11 +480,54 @@ export function linkInstance(go: GameObject, data: PrefabJson): void {
 export function unpackInstance(go: GameObject): void {
   const walk = (g: GameObject) => {
     g._prefabId = null;
+    g._nestedPrefab = null;
+    g._nestedPid = null;
     for (const c of g.children) if (!c.prefab) walk(c);
   };
   go.prefab = null;
   go._prefabCompact = null;
   walk(go);
+}
+
+/**
+ * JSON of a prefab file for `root`: the root and its own objects in full, prefab instances inside written compactly (nested
+ * prefabs). Inside an instance, objects that came from a nested prefab (`_nestedPrefab` / `_nestedPid`) are written as a compact
+ * instance of that prefab again (Apply keeps the nesting).
+ */
+export function serializePrefabTree(root: GameObject): GameObjectJson {
+  const rec = (g: GameObject, top: boolean): GameObjectJson => {
+    if (!top) {
+      if (g.prefab) return serializeGameObject(g);
+      if (g._nestedPrefab) {
+        const data = Assets.getPrefab(g._nestedPrefab)?.data;
+        if (data) return collapseInstance(g, data, nestedAccess(g));
+      }
+    }
+    return plainJson(g, (c) => rec(c, false));
+  };
+  return rec(root, true);
+}
+
+/**
+ * Rewrites object ids in saved JSON through `map` (object ids, GameObject reference fields, prefab instance id maps / overrides /
+ * added children). References to objects outside the map become null.
+ */
+export function remapJsonIds(n: GameObjectJson, map: Map<number, number>): void {
+  const fields = (type: string, f: Record<string, unknown> | undefined) => {
+    const t = Types.get(type);
+    if (!t || !f) return;
+    for (const fi of getFields(t.ctor)) if (fi.type === 'gameobject' && typeof f[fi.name] === 'number') f[fi.name] = map.get(f[fi.name] as number) ?? null;
+  };
+  n.id = map.get(n.id) ?? n.id;
+  for (const c of n.components) fields(c.type, c.fields);
+  const o = n.overrides;
+  if (o) {
+    for (const k of Object.keys(o.ids)) o.ids[k] = map.get(o.ids[k]) ?? o.ids[k];
+    for (const m of Object.values(o.objects ?? {})) for (const [key, cm] of Object.entries(m.comps ?? {})) fields(key.slice(0, key.lastIndexOf('#')), cm.fields);
+    for (const list of Object.values(o.addedComps ?? {})) for (const c of list) fields(c.type, c.fields);
+    for (const kids of Object.values(o.added ?? {})) for (const k of kids) remapJsonIds(k, map);
+  }
+  for (const c of n.children) remapJsonIds(c, map);
 }
 
 export function serializeComponent(c: Component): ComponentJson {
@@ -497,7 +584,8 @@ export function deserializeGameObject(j: GameObjectJson, ctx: ReadContext): Game
   let compact: GameObjectJson | null = null;
   if (j.prefab && j.overrides) {
     // compact prefab instance: rebuilt from the prefab + its overrides (fresh ids for prefab objects the instance didn't have)
-    const full = expandInstance(j, () => (ctx.keepIds ? _newId() : tempIds--));
+    const rootId = j.id;
+    const full = expandInstance(j, (pid) => (ctx.temp ? nestedId(rootId, pid) : ctx.keepIds ? _newId() : tempIds--));
     if (full) j = full;
     else compact = j;
   }
@@ -509,6 +597,8 @@ export function deserializeGameObject(j: GameObjectJson, ctx: ReadContext): Game
   go.drawSelf = j.draw !== false;
   go.prefab = j.prefab ?? null;
   go._prefabId = j.pid ?? null;
+  go._nestedPrefab = j.npf ?? null;
+  go._nestedPid = j.npid ?? null;
   if (compact) go._prefabCompact = compact;
   const t = j.transform;
   if (t) {

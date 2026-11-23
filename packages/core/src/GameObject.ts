@@ -210,6 +210,10 @@ export class GameObject {
   prefab: string | null = null;
   /** @internal id of the matching object inside the prefab file (every object of an instance; null = added to the instance). */
   _prefabId: number | null = null;
+  /** @internal inside an instance: root of a prefab nested in that prefab (its path) */
+  _nestedPrefab: string | null = null;
+  /** @internal inside an instance: id of the object in the nested prefab's file */
+  _nestedPid: number | null = null;
   /** @internal kept when the scene changes (SceneManager.dontDestroyOnLoad; root objects). */
   _dontDestroy = false;
   /** @internal compact JSON of an instance whose prefab could not be loaded (saved back unchanged). */

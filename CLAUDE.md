@@ -122,3 +122,6 @@ scripts/e2e/             headless Chrome driver (driver.mjs) + editor / game che
   `INLINE` constant in Editor.ts) or undo / Stop lose the linked content; files use the plain call and `serializeLinkedFolder`.
 - Game builds rewrite Rapier's inlined base64 WASM into an emitted `.wasm` asset (rsProjectPlugin `transform`): keep the regex in
   sync when upgrading `@dimforge/rapier3d-compat` (the build warns if it no longer matches).
+- Nested prefabs: don't flatten when writing prefab files — use `serializePrefabTree` (keeps nested instances compact). Ids
+  inside canonical trees that come from a nested prefab unknown to the outer file are `nestedId(...)` (≥ 1e9): deterministic on
+  purpose (outer instances key overrides by them).

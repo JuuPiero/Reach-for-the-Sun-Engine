@@ -109,3 +109,64 @@ test('prefab instance: duplicate keeps the link + overrides; legacy full trees l
   assert.equal(sm.root.gameObjects[0].name, 'Ghost');
   assert.deepEqual(serializeScene(sm).root.gameObjects[0].overrides, missing.root.gameObjects[0].overrides);
 });
+
+test('nested prefabs: outer prefab contains a compact instance; inner changes reach scene instances; overrides at every level', async () => {
+  const { serializePrefabTree, canonicalPrefab } = await import('@rs/core');
+  const BULB = 'Assets/Prefabs/Bulb.pfb.json';
+  const LAMP2 = 'Assets/Prefabs/Lamp2.pfb.json';
+  const bulb = (extra: boolean, height: number): PrefabJson => ({
+    format: 1,
+    gameObject: {
+      id: 1,
+      name: 'Bulb',
+      transform: T,
+      components: [{ type: 'Mesh', fields: { shape: 'Sphere', color: [1, 1, 1] } }, { type: 'Hover', fields: { height } }],
+      children: extra ? [{ id: 2, name: 'Glow', transform: T, components: [], children: [] }] : [],
+    },
+  });
+  Assets.prefabRef(BULB).data = bulb(false, 1);
+  // Lamp2: a base with a Bulb instance (yellow in the lamp: an override stored in Lamp2's file)
+  Assets.prefabRef(LAMP2).data = {
+    format: 1,
+    gameObject: {
+      id: 1,
+      name: 'Lamp2',
+      transform: T,
+      components: [],
+      children: [{ id: 10, name: 'Bulb', prefab: BULB, transform: { ...T, p: [0, 2, 0] }, components: [], children: [], overrides: { ids: { 1: 10 }, objects: { 1: { comps: { 'Mesh#0': { fields: { color: [1, 1, 0] } } } } } } }],
+    },
+  };
+  const canon = canonicalPrefab(Assets.getPrefab(LAMP2)!.data!);
+  assert.equal(canon.children[0].npf, BULB);
+  assert.equal(canon.children[0].npid, 1);
+
+  const scene = new Scene('n');
+  const inst = Assets.getPrefab(LAMP2)!.instantiate(null, null, scene);
+  const b = inst.children[0];
+  assert.equal(b._nestedPrefab, BULB);
+  assert.equal(b.prefab, null, 'the nested root is part of the outer instance');
+  assert.deepEqual([...b.getComponent(Mesh)!.color.asArray()], [1, 1, 0], 'outer prefab override applied');
+  // a scene override on the nested object
+  b.getComponent(Hover)!.height = 7;
+  const j1 = serializeScene(scene);
+  assert.deepEqual(j1.root.gameObjects[0].overrides!.objects!['10'].comps!['Hover#0'].fields, { height: 7 });
+
+  // the inner prefab changes: new child + another default; the scene reloads
+  Assets.prefabRef(BULB).data = bulb(true, 3);
+  const s2 = deserializeScene(JSON.parse(JSON.stringify(j1)), 'n2');
+  const b2 = s2.root.gameObjects[0].children[0];
+  assert.deepEqual(b2.children.map((c) => c.name), ['Glow'], 'inner prefab child reaches the outer instance');
+  assert.equal(b2.getComponent(Hover)!.height, 7, 'scene override kept');
+  assert.deepEqual([...b2.getComponent(Mesh)!.color.asArray()], [1, 1, 0], 'outer prefab override kept');
+  assert.equal(b2.children[0]._nestedPid, 2);
+  assert.ok(b2.children[0]._prefabId! >= 1_000_000_000, 'objects new in the inner prefab get stable ids in the outer one');
+  assert.equal(canonicalPrefab(Assets.getPrefab(LAMP2)!.data!).children[0].children[0].id, b2.children[0]._prefabId, 'deterministic');
+
+  // what Apply writes for the outer prefab: the nested part stays a compact Bulb instance with its overrides
+  const tree = serializePrefabTree(s2.root.gameObjects[0]);
+  const nested = tree.children[0];
+  assert.equal(nested.prefab, BULB);
+  assert.deepEqual(nested.overrides!.objects!['1'].comps!['Mesh#0'].fields, { color: [1, 1, 0] });
+  assert.deepEqual(nested.overrides!.objects!['1'].comps!['Hover#0'].fields, { height: 7 });
+  assert.deepEqual(nested.children, []);
+});

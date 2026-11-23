@@ -35,6 +35,8 @@ import {
   userDataExt,
   emptyFsm,
   serializeLinkedFolder,
+  serializePrefabTree,
+  remapJsonIds,
   ProjectSettings,
   type ProjectSettingsJson,
   newReadContext,
@@ -755,13 +757,21 @@ export class ${finalName} extends Behavior {
   async createPrefab(go: GameObject, dir = this.assetFolder): Promise<string> {
     const p = this.freeAssetPath(dir, go.name.replace(/[\\/:*?"<>|]/g, '_'), '.pfb.json');
     this.recordUndo('Create Prefab');
-    // prefabs don't nest: instances inside become plain objects
-    for (const d of go.selfAndDescendants()) if (d.prefab || d._prefabId !== null) unpackInstance(d);
-    const data: PrefabJson = { format: 1, gameObject: serializeGameObject(go, { flatten: true }) };
+    if (go.prefab || go._prefabId !== null) unpackInstance(go); // the object itself becomes the new prefab's root
+    // prefab instances inside stay nested prefabs (written compactly); file ids = the scene ids
+    const data: PrefabJson = { format: 1, gameObject: serializePrefabTree(go) };
     await this.write(p, data);
+    const sceneJson = serializeScene(this.scene, INLINE);
     Assets.prefabRef(p).data = data;
-    go.prefab = p;
-    linkInstance(go, data);
+    // the object becomes a clean instance of the new prefab (same scene ids)
+    const node = findObjectJson(sceneJson, go.id);
+    if (node) {
+      const ids: Record<string, number> = {};
+      const walk = (n: GameObjectJson) => ((ids[n.id] = n.id), n.children.forEach(walk));
+      walk(canonicalPrefab(data));
+      Object.assign(node, { components: [], children: [], prefab: p, overrides: { ids } });
+      this.rebuildScene(sceneJson);
+    }
     this.changed(true);
     await this.refreshFiles();
     Debug.log(`Prefab ${p} created`);
@@ -800,7 +810,7 @@ export class ${finalName} extends Behavior {
     const roots = this.scene.allGameObjects().filter((g) => !g.parent);
     if (!roots.length) return Debug.warn('A prefab needs one root object');
     if (roots.length > 1) Debug.warn(`Only '${roots[0].name}' is saved: a prefab has one root object`);
-    const data: PrefabJson = { format: 1, gameObject: serializeGameObject(roots[0], { flatten: true }) };
+    const data: PrefabJson = { format: 1, gameObject: serializePrefabTree(roots[0]) };
     await this.write(pm.path, data);
     Assets.prefabRef(pm.path).data = data;
     this.setDirty(false);
@@ -864,16 +874,9 @@ export class ${finalName} extends Behavior {
       for (const c of g.children) if (!c.destroyed) assign(c, mine);
     };
     assign(go, true);
-    const tree = serializeGameObject(go, { flatten: true });
-    const remap = (n: GameObjectJson) => {
-      n.id = pidOf.get(n.id)!;
-      for (const c of n.components) {
-        const t = Types.get(c.type);
-        if (t) for (const f of getFields(t.ctor)) if (f.type === 'gameobject' && typeof c.fields[f.name] === 'number') c.fields[f.name] = pidOf.get(c.fields[f.name] as number) ?? null;
-      }
-      n.children.forEach(remap);
-    };
-    remap(tree);
+    // nested prefabs stay compact instances; then every id moves into the prefab's id space
+    const tree = serializePrefabTree(go);
+    remapJsonIds(tree, pidOf);
     const data: PrefabJson = { format: 1, gameObject: tree };
     await this.write(path, data);
     // this instance becomes a clean instance of the new data (same scene ids)
@@ -911,7 +914,7 @@ export class ${finalName} extends Behavior {
   /** A prefab file changed on disk: instances in the open scene take the new data and keep their overrides. */
   private async prefabFileChanged(path: string): Promise<void> {
     if (this.prefabMode?.path === path) return Debug.warn(`${path} changed on disk while you edit it`);
-    const used = this.scene.allGameObjects().some((g) => g.prefab === path);
+    const used = this.scene.allGameObjects().some((g) => !!g.prefab); // any instance: prefabs can nest this one
     if (!used || this.mode !== 'edit') {
       await Assets.reloadPrefab(path); // play: Stop rebuilds the scene from its (compact) snapshot with the new data
       return;

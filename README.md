@@ -210,7 +210,11 @@ Enter). Âm thanh / texture do `scripts/gen-demo-sounds.mjs` / `scripts/gen-demo
 - Inspector của instance: thanh Prefab với **Open**, **Select**, **Apply** (ghi thay đổi của instance này vào prefab), **Revert**
   (bỏ override), **Unpack** (thành object thường); nhãn "overrides" khi instance khác prefab.
 - Override gồm: field của component, tên / tag / layer / Update / Draw / Transform của object con, component thêm / bớt, object
-  con thêm / xoá. Prefab không lồng nhau: prefab tạo từ object chứa instance khác sẽ gộp instance đó thành object thường.
+  con thêm / xoá.
+- **Prefab lồng nhau**: prefab tạo từ object có chứa instance của prefab khác giữ nguyên instance đó (lưu gọn trong file). Sửa
+  prefab bên trong (ví dụ Coin) thì mọi prefab chứa nó và các instance trong scene đều đổi theo; override có thể đặt ở mọi cấp
+  (trong file prefab ngoài, hoặc trên instance trong scene); Apply giữ nguyên cấu trúc lồng nhau. Hierarchies đánh dấu `pfb` mờ
+  cho gốc của prefab lồng bên trong.
 
 ## Project Settings
 
@@ -237,5 +241,5 @@ scene cũ bị huỷ.
 
 ## Giới hạn hiện tại (mốc 5)
 
-Chưa có skinned mesh / root motion, prefab lồng nhau. Material dùng ánh sáng Blinn-Phong
+Chưa có skinned mesh / root motion. Material dùng ánh sáng Blinn-Phong
 (Metallic / Roughness được quy đổi, chưa có phản chiếu môi trường). Game dùng vật lý nặng thêm ~3,5 MB (Rapier bản nhúng WASM).

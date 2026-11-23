@@ -168,3 +168,14 @@ the loader installed by sceneLoader.ts (also loads nested Auto Load links, never
 folder of that path or make an `_additive` root folder. Editor: `saveScene` also writes every loaded linked folder
 (`serializeLinkedFolder`), `linkScene` (Hierarchy drop of a scene asset), `setLinkedLoaded`; a changed linked file reloads the
 open scene like a changed scene file.
+
+## 11. Nested prefabs
+A prefab file may contain compact instances of other prefabs. `canonicalPrefab(A)` expands them (latest data, cached with
+the nested prefabs' data as dependencies — stale when one changes) and annotates the tree: `npf` on a nested root, `npid` = the
+object's id in the nested prefab's file; ids the outer file doesn't know yet get deterministic ids (`nestedId(outerRootId, pid)`,
+≥ 1e9) so outer pids stay stable across sessions. A scene instance of A owns the nested objects (A pids in `_prefabId`, nested
+marks in `_nestedPrefab` / `_nestedPid`; the nested root has no `prefab`), so overrides on them are A-instance overrides.
+`serializePrefabTree(root)` writes a prefab file: real instances compact, and objects carrying nested marks compact again
+against the nested prefab (`collapseInstance` with `nestedAccess`); Apply then moves every id into A's id space with
+`remapJsonIds` (ids, references, override id maps, added children). createPrefab keeps instances inside nested and turns the
+source object into a clean instance (same ids). The editor rebuilds the scene on any prefab file change (nesting).

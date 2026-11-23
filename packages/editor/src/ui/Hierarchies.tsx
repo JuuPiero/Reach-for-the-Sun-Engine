@@ -1,4 +1,4 @@
-import { useMemo, useState, type DragEvent } from 'react';
+import { useEffect, useMemo, useState, type DragEvent } from 'react';
 import { Types, type Folder, type GameObject } from '@rs/core';
 import { editor, isAncestor, type CreateKind } from '../editor/Editor';
 import { useEditor, useTicker } from './hooks';
@@ -29,6 +29,11 @@ export function Hierarchies() {
   useTicker(editor.mode === 'play', 500);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [filter, setFilter] = useState('');
+  useEffect(() => {
+    const f = (e: Event) => setFilter(String((e as CustomEvent).detail ?? ''));
+    window.addEventListener('rs:search', f);
+    return () => window.removeEventListener('rs:search', f);
+  }, []);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [drop, setDrop] = useState<{ key: string; zone: 'before' | 'into' | 'after' } | null>(null);
   const scene = editor.scene;
@@ -207,6 +212,7 @@ export function Hierarchies() {
               data-key={r.key}
             >
               <RowToggles row={r} />
+              <span className={`rs-row-box${selected ? " on" : ""}`} />
               <span className="rs-indent" style={{ width: r.depth * 14 }} />
               <span className={`rs-arrow${hasKids ? '' : ' empty'}${collapsed.has(r.key) ? '' : ' open'}`} onMouseDown={(e) => (e.stopPropagation(), hasKids && toggle(r.key))}>
                 {hasKids ? <Icons.Chevron size={10} /> : null}
@@ -232,6 +238,7 @@ export function Hierarchies() {
                 <span className="rs-row-name">{r.kind === 'object' ? r.go.name : r.folder.name}</span>
               )}
               {r.kind === 'object' && r.go.prefab ? <span className="rs-row-badge" title={r.go.prefab}>pfb</span> : null}
+              {r.kind === 'object' && r.go._nestedPrefab ? <span className="rs-row-badge nested" title={`nested prefab ${r.go._nestedPrefab}`}>pfb</span> : null}
               {r.kind === 'folder' && r.folder.scenePath ? <span className={`rs-row-badge linked${r.folder.sceneLoaded ? '' : ' unloaded'}`} title={r.folder.scenePath}>{r.folder.sceneLoaded ? 'scn' : 'scn (unloaded)'}</span> : null}
             </div>
           );
