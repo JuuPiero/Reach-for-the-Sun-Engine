@@ -85,6 +85,9 @@ export class Player extends Behavior {
 - Demo: robot (model sinh bởi `node scripts/gen-demo-assets.mjs`) có các clip Idle / Walk / Run / Jump; WASD để đi, Shift để
   chạy, Space để nhảy; thùng gỗ / bóng là vật Dynamic, cầu thang và dốc là vật tĩnh, coin là trigger.
 
+- **Skinned mesh**: model glTF / GLB có skin (xương) chạy trực tiếp — Motion điều khiển các clip của nó như model thường (cross-fade,
+  FSM). Demo: xúc tu `Assets/Models/Tentacle.glb` (4 xương, clip Idle / Wiggle, tạo bằng `scripts/gen-skinned.mjs`) trong folder Gimmick.
+
 ## Editor
 
 - **Hierarchies**: cây Folder / GameObject (folder chữ xanh đậm, object chữ nghiêng), hai nút bật/tắt Update / Draw ở đầu mỗi
@@ -241,5 +244,5 @@ scene cũ bị huỷ.
 
 ## Giới hạn hiện tại (mốc 5)
 
-Chưa có skinned mesh / root motion. Material dùng ánh sáng Blinn-Phong
+Chưa có root motion (clip di chuyển nhân vật). Material dùng ánh sáng Blinn-Phong
 (Metallic / Roughness được quy đổi, chưa có phản chiếu môi trường). Game dùng vật lý nặng thêm ~3,5 MB (Rapier bản nhúng WASM).

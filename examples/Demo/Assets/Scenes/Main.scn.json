@@ -562,6 +562,47 @@
               }
             ],
             "children": []
+          },
+          {
+            "id": 36,
+            "name": "Tentacle",
+            "transform": {
+              "p": [
+                -6.5,
+                0,
+                2.5
+              ],
+              "r": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "s": [
+                1,
+                1,
+                1
+              ]
+            },
+            "components": [
+              {
+                "type": "Mesh",
+                "fields": {
+                  "shape": "Model",
+                  "model": "Assets/Models/Tentacle.glb"
+                }
+              },
+              {
+                "type": "Motion",
+                "fields": {
+                  "fsm": "",
+                  "clip": "Wiggle",
+                  "crossFade": 0.2,
+                  "updateInEdit": true
+                }
+              }
+            ],
+            "children": []
           }
         ]
       },
