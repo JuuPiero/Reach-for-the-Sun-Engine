@@ -90,7 +90,7 @@ scripts/e2e/             headless Chrome driver (driver.mjs) + editor / game che
   shared object every tick and switch to it (keeping the state when it still exists).
 - The editor reloads the open scene when its file changes on disk and nothing is unsaved — another editor process saving the same
   project overwrites in-memory work otherwise (two editors on one project = last save wins).
-- Theme: colours are CSS variables in styles.css `:root` (black + orange `--accent`); controls (select, checkbox, range, colour) are
+- Theme: colours are CSS variables in styles.css `:root` (RE-style dark grey + blue `--accent`; the "RE-style look" block at the end of styles.css overrides the earlier rules); controls (select, checkbox, range, colour) are
   restyled with `appearance: none` — new controls must use them, not browser defaults.
 - Rapier 0.21's character-controller snap-to-ground sometimes returns the full downward displacement for a resting character
   (it sinks into the ground and then falls); it is disabled — scripts keep a small downward velocity while grounded. The

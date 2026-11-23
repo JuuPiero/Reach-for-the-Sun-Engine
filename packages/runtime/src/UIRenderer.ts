@@ -151,7 +151,7 @@ export class UIRenderer {
       s.border = border;
       s.cursor = button?.enabled && interactive ? 'pointer' : 'default';
       s.pointerEvents = interactive ? (button?.enabled ? 'auto' : 'none') : this.opts.onPick ? 'auto' : 'none';
-      s.outline = this.opts.isSelected?.(go) ? '2px solid #ff8a1f' : 'none';
+      s.outline = this.opts.isSelected?.(go) ? '2px solid #3a9cff' : 'none';
       // text
       const label = button?.enabled ? button.text : text?.enabled ? text.text : '';
       if (e.text.textContent !== label) e.text.textContent = label;

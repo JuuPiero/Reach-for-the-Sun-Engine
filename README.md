@@ -113,7 +113,7 @@ export class Player extends Behavior {
   mọi object đã chọn; một lần Undo hoàn tác cả nhóm.
 - Scene đang mở bị sửa từ ngoài (editor khác, git…): tự nạp lại nếu chưa có thay đổi chưa lưu, nếu có thì Console cảnh báo
   (File ▸ Reload Scene để lấy bản trên đĩa).
-- Giao diện tông đen + cam, mọi control (menu, ô chọn, checkbox, thanh trượt, ô màu, ô số X/Y/Z) đều tự vẽ.
+- Giao diện theo phong cách RE Engine: panel xám đậm, viền xanh cho panel đang dùng, tên trong Hierarchies in nghiêng (folder xanh), Macro Shelf dạng tab chữ + nút vuông nhãn xanh; mọi control (menu, ô chọn, checkbox, thanh trượt, ô màu, ô số X/Y/Z) đều tự vẽ.
 
 ## Âm thanh
 

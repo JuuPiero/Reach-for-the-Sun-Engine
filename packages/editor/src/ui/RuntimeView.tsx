@@ -445,7 +445,7 @@ export function RuntimeView() {
       for (const m of want)
         if (!outlined.has(m)) {
           m.renderOutline = true;
-          m.outlineColor = new Color3(1, 0.62, 0.15);
+          m.outlineColor = new Color3(0.2, 0.68, 1);
           m.outlineWidth = 0.02;
           outlined.add(m);
         }

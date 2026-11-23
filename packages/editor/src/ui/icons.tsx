@@ -344,7 +344,7 @@ export function objectIcon(kinds: string[]): (p: P) => JSX.Element {
 
 /** Icon + accent colour of a project file. */
 export function assetVisual(path: string, dir: boolean): { icon: (p: P) => JSX.Element; color: string; kind: string } {
-  if (dir) return { icon: Icons.Folder, color: '#d6a24a', kind: 'Folder' };
+  if (dir) return { icon: Icons.Folder, color: '#c8c8c8', kind: 'Folder' };
   const p = path.toLowerCase();
   if (p.endsWith('.scn.json')) return { icon: Icons.Scene, color: '#b07cff', kind: 'Scene' };
   if (p.endsWith('.pfb.json')) return { icon: Icons.Prefab, color: '#3fa7ff', kind: 'Prefab' };

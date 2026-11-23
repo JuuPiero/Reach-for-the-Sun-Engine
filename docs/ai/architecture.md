@@ -99,7 +99,7 @@ parameters / states (renames follow into transitions / initial) / transitions / 
 - **UI** (`components/ui.ts` data, `packages/runtime/src/UIRenderer.ts` drawing): DOM overlay, one absolutely positioned div per
   GameObject with UI components, nested under the nearest UI ancestor's div, inside a root of `UI.referenceHeight` (720) CSS px
   scaled to the host. Anchor fractions give left / top (y up). Buttons: `pointerenter/leave` → `_hover`, click → `UIButton.click()`
-  only when `interactive()` (game always, editor in play); otherwise `pointerdown` → `onPick` (editor selection, orange outline).
+  only when `interactive()` (game always, editor in play); otherwise `pointerdown` → `onPick` (editor selection, blue outline).
   Display follows `visibleInHierarchy` (`go.active` = update + draw).
 - **Input** additions: gamepads polled in `Input._beginFrame` (standard mapping, `GAMEPAD_BUTTONS`), pointer lock on the attached
   element. **SaveData**: localStorage keys `<namespace>:<key>` (namespace = project name; the editor uses `editor:<name>` so play sessions do not touch the game's saves).

@@ -112,8 +112,8 @@ export function MenuBar({ menus, right }: { menus: { label: string; items: () =>
     <div className="rs-menubar" onMouseDown={(e) => e.stopPropagation()}>
       <div className="rs-logo" title="RS Engine">
         <svg width="16" height="16" viewBox="0 0 16 16">
-          <circle cx="8" cy="8" r="6.5" fill="none" stroke="#f5b942" strokeWidth="1.6" />
-          <circle cx="8" cy="8" r="2.6" fill="#f5b942" />
+          <circle cx="8" cy="8" r="6.5" fill="none" stroke="#e6e6e6" strokeWidth="1.6" />
+          <circle cx="8" cy="8" r="2.6" fill="#4aa8ff" />
         </svg>
       </div>
       {menus.map((m, i) => (
