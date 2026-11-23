@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AudioEngine, MissingComponent, Physics, Quaternion, Types, Vector3, eulerDegFromQuat, quatFromEulerDeg, scriptTypes, type Component, type GameObject, type Material } from '@rs/core';
 import { editor } from '../editor/Editor';
 import { assetVisual, Icons } from './icons';
@@ -90,16 +90,23 @@ export function Inspector() {
   }
   return (
     <div className="rs-panel rs-inspector">
-      <div className="rs-inspector-title">{title}</div>
+      <div className="rs-inspector-title">
+        <span>{title}</span>
+        <span className="rs-grow" />
+        <span className="rs-frame-btn" title="Fields of the selection; asset settings when a file is selected">?</span>
+        <span className="rs-frame-btn" title="Clear the selection" onClick={() => (editor.select([]), void editor.selectAsset(null))}>
+          ✕
+        </span>
+      </div>
       <div className="rs-inspector-body">{body}</div>
     </div>
   );
 }
 
-function Section({ title, children, defaultOpen = true, right, onContext }: { title: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; right?: React.ReactNode; onContext?: (e: React.MouseEvent) => void }) {
+function Section({ title, children, defaultOpen = true, right, onContext, sub }: { title: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; right?: React.ReactNode; onContext?: (e: React.MouseEvent) => void; sub?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rs-section">
+    <div className={`rs-section${sub ? " sub" : ""}`}>
       <div className="rs-section-head" onClick={() => setOpen(!open)} onContextMenu={onContext}>
         <span className={`rs-arrow${open ? ' open' : ''}`}>
           <Icons.Chevron size={10} />
@@ -116,6 +123,16 @@ function Section({ title, children, defaultOpen = true, right, onContext }: { ti
 
 function ObjectInspector({ go, count }: { go: GameObject; count: number }) {
   const [addOpen, setAddOpen] = useState<{ x: number; y: number } | null>(null);
+  // Inspector search: rows whose label doesn't match are hidden (RE's property filter)
+  const [q, setQ] = useState('');
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const s = q.trim().toLowerCase();
+    for (const row of rootRef.current?.querySelectorAll<HTMLElement>(".rs-section-body .rs-field") ?? []) {
+      const label = row.querySelector("label")?.textContent?.toLowerCase() ?? "";
+      row.style.display = !s || label.includes(s) ? "" : "none";
+    }
+  });
   const t = go.transform;
   const flag = (k: 'updateSelf' | 'drawSelf', v: boolean) => {
     editor.recordUndo(k);
@@ -152,7 +169,11 @@ function ObjectInspector({ go, count }: { go: GameObject; count: number }) {
     return [...groups].map(([label, submenu]) => ({ label, submenu }));
   };
   return (
-    <>
+    <div className="rs-object-inspector" ref={rootRef}>
+      <div className="rs-search rs-inspector-search">
+        <Icons.Search size={12} />
+        <input placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
       <div className="rs-object-head">
         <span className="rs-toggle" title="Update Self" onClick={() => flag('updateSelf', !go.updateSelf)}>
           {go.updateSelf ? <Icons.Update size={13} /> : <Icons.UpdateOff size={13} />}
@@ -202,7 +223,8 @@ function ObjectInspector({ go, count }: { go: GameObject; count: number }) {
         </div>
       ) : null}
       <PrefabBar go={go} />
-      <Section title="Global">
+      <Section title="Transform" right={<span className="rs-help" title="Position / rotation / scale (Global = world, Local = relative to the parent)">?</span>}>
+      <Section title="Global" sub>
         <div className="rs-field">
           <label>Position</label>
           <div className="rs-field-value">
@@ -222,7 +244,7 @@ function ObjectInspector({ go, count }: { go: GameObject; count: number }) {
           </div>
         </div>
       </Section>
-      <Section title="Local">
+      <Section title="Local" sub>
         <div className="rs-field">
           <label>LocalPosition</label>
           <div className="rs-field-value">
@@ -242,10 +264,11 @@ function ObjectInspector({ go, count }: { go: GameObject; count: number }) {
           </div>
         </div>
       </Section>
-      <Section title="General" defaultOpen={false}>
+      <Section title="General" sub defaultOpen={false}>
         <div className="rs-hint">
           Id {go.id} · {go.children.length} children · folder {go.folder?.path || 'Root'}
         </div>
+      </Section>
       </Section>
       {go.components.map((c, i) => {
         // the same component (type + rank among that type) on the other selected objects
@@ -255,7 +278,7 @@ function ObjectInspector({ go, count }: { go: GameObject; count: number }) {
         if (objs.length > 1 && others.length < objs.length - 1) return null; // not shared by every selected object
         return <ComponentView key={`${go.id}:${i}:${type}`} c={c} others={others} />;
       })}
-    </>
+    </div>
   );
 }
 

@@ -15,6 +15,11 @@ const LAYOUT_KEY = 'rs.layout';
 export function App() {
   useEditor('mode', 'dirty', 'scene', 'selection');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(() => {
+    const open = () => setSettingsOpen(true);
+    window.addEventListener('rs:project-settings', open);
+    return () => window.removeEventListener('rs:project-settings', open);
+  }, []);
   const [layout, setLayout] = useState(() => {
     try {
       return { left: 280, right: 380, bottom: 300, ...(JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? '{}') as object) };
@@ -153,14 +158,25 @@ export function App() {
 }
 
 function PanelFrame({ title, children, style, grow }: { title: string | null; children: React.ReactNode; style?: React.CSSProperties; grow?: boolean }) {
+  const [hidden, setHidden] = useState(false);
   return (
-    <div className={`rs-frame${grow ? ' grow' : ''}`} style={style}>
+    <div className={`rs-frame${grow ? ' grow' : ''}${hidden ? ' folded' : ''}`} style={style}>
       {title ? (
-        <div className="rs-tabs">
+        <div className="rs-tabs" onDoubleClick={() => setHidden(!hidden)}>
           <div className="rs-tab active">{title}</div>
+          <span className="rs-grow" />
+          <span className="rs-frame-btn" title={`${title} — see README.md`}>?</span>
+          <span className="rs-frame-btn" title={hidden ? 'Show' : 'Fold'} onClick={() => setHidden(!hidden)}>
+            {hidden ? '»' : '«'}
+          </span>
+          <span className="rs-frame-btn" title="Hide the contents (double-click the title bar to show them)" onClick={() => setHidden(true)}>
+            ✕
+          </span>
         </div>
       ) : null}
-      <div className="rs-frame-body">{children}</div>
+      <div className="rs-frame-body" style={hidden ? { display: 'none' } : undefined}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -191,7 +207,7 @@ function Splitter({ axis, style, onDrag }: { axis: 'x' | 'y'; style: React.CSSPr
 }
 
 function Toolbar() {
-  useEditor('mode', 'dirty', 'scene');
+  useEditor('mode', 'dirty', 'scene', 'files');
   const m = editor.mode;
   return (
     <div className="rs-toolbar">
@@ -209,12 +225,33 @@ function Toolbar() {
         <Icons.Redo size={16} />
       </button>
       <span className="rs-sep" />
-      <span className="rs-toolbar-label">Scene:</span>
-      <span className="rs-toolbar-scene">
-        {editor.scene.path ?? '(unsaved)'}
-        {editor.dirty ? ' *' : ''}
-      </span>
-      <div style={{ flex: 1 }} />
+      <span className="rs-toolbar-label">Target:</span>
+      <select
+        className="rs-toolbar-target"
+        title="Scene being edited (pick another to open it)"
+        value={editor.scene.path ?? ''}
+        onChange={(e) => e.target.value && void editor.openScene(e.target.value)}
+      >
+        {editor.scene.path ? null : <option value="">★ (unsaved)</option>}
+        {editor.files
+          .filter((f) => f.path.endsWith('.scn.json'))
+          .map((f) => (
+            <option key={f.path} value={f.path}>
+              ★ {f.path.slice(f.path.lastIndexOf('/') + 1).replace(/\.scn\.json$/, '')}
+              {f.path === editor.scene.path && editor.dirty ? ' *' : ''}
+            </option>
+          ))}
+      </select>
+      <button className="rs-tool" title="Project Settings" onClick={() => window.dispatchEvent(new Event('rs:project-settings'))}>
+        <Icons.Gear size={16} />
+      </button>
+      <button className="rs-tool" title="Reload Scene" disabled={!editor.scene.path} onClick={() => editor.scene.path && void editor.openScene(editor.scene.path)}>
+        <Icons.Refresh size={16} />
+      </button>
+      <span className="rs-sep" />
+      <button className="rs-tool stop" title="Stop" disabled={m === 'edit'} onClick={() => editor.stop()}>
+        <Icons.Stop size={16} />
+      </button>
       <button className={`rs-tool play${m === 'play' ? ' active' : ''}`} title="Play (Ctrl+P)" onClick={() => (m === 'edit' ? editor.play() : m === 'pause' ? editor.pause() : undefined)}>
         <Icons.Play size={16} />
       </button>
@@ -223,9 +260,6 @@ function Toolbar() {
       </button>
       <button className="rs-tool" title="Step Frame" onClick={() => editor.stepFrame()}>
         <Icons.Step size={16} />
-      </button>
-      <button className="rs-tool stop" title="Stop" disabled={m === 'edit'} onClick={() => editor.stop()}>
-        <Icons.Stop size={16} />
       </button>
       <div style={{ flex: 1 }} />
       <button className="rs-tool" title="Build Game (Web)" onClick={() => void editor.buildGame()}>
@@ -296,30 +330,45 @@ const SHELVES: { name: string; items: { label: string; icon: keyof typeof Icons;
 /** RE-style Macro Shelf: tabs of one-click creation buttons. */
 function MacroShelf() {
   const [tab, setTab] = useState(0);
+  const [folded, setFolded] = useState(false);
   const shelf = SHELVES[tab];
   return (
     <div className="rs-shelf">
-      <div className="rs-tabs">
+      <div className="rs-tabs" onDoubleClick={() => setFolded(!folded)}>
         <div className="rs-tab active">Macro Shelf</div>
+        <span className="rs-grow" />
+        <span className="rs-frame-btn" title="One-click creation buttons, grouped in tabs">?</span>
+        <span className="rs-frame-btn" title={folded ? 'Show' : 'Fold'} onClick={() => setFolded(!folded)}>
+          {folded ? '»' : '«'}
+        </span>
+        <span className="rs-frame-btn" title="Fold (double-click the title bar to show)" onClick={() => setFolded(true)}>
+          ✕
+        </span>
       </div>
-      <div className="rs-shelf-tabs">
-        {SHELVES.map((s, i) => (
-          <span key={s.name} className={`rs-shelf-tab${i === tab ? ' active' : ''}`} onClick={() => setTab(i)}>
-            {s.name}
-          </span>
-        ))}
-      </div>
-      <div className="rs-shelf-buttons">
-        {shelf.items.map((it) => {
-          const I = Icons[it.icon];
-          return (
-            <button key={it.label} className="rs-shelf-btn" onClick={() => (it.kind ? editor.create(it.kind) : it.action?.())} title={it.label}>
-              <I size={18} />
-              <span>{it.label}</span>
-            </button>
-          );
-        })}
-      </div>
+      {folded ? null : (
+        <>
+          <div className="rs-shelf-tabs">
+            {SHELVES.map((s, i) => (
+              <span key={s.name} className={`rs-shelf-tab${i === tab ? ' active' : ''}`} onClick={() => setTab(i)}>
+                {s.name}
+              </span>
+            ))}
+            <span className="rs-grow" />
+            <Icons.Search size={12} className="rs-dim" />
+          </div>
+          <div className="rs-shelf-buttons">
+            {shelf.items.map((it) => {
+              const I = Icons[it.icon];
+              return (
+                <button key={it.label} className="rs-shelf-btn" onClick={() => (it.kind ? editor.create(it.kind) : it.action?.())} title={it.label}>
+                  <I size={18} />
+                  <span>{it.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
     </div>
   );
 }

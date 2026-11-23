@@ -122,6 +122,10 @@ export function MenuBar({ menus, right }: { menus: { label: string; items: () =>
         </div>
       ))}
       {open && <MenuList items={menus[open.i].items()} x={open.x} y={open.y} onClose={() => setOpen(null)} />}
+      <div className="rs-menubar-search">
+        <Icons.Search size={11} />
+        <input placeholder="Search" title="Find objects (filters the Hierarchies)" onChange={(e) => window.dispatchEvent(new CustomEvent('rs:search', { detail: e.target.value }))} />
+      </div>
       <div style={{ flex: 1 }} />
       {right}
     </div>
