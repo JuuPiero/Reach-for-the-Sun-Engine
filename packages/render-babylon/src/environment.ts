@@ -25,7 +25,11 @@ export class EnvironmentRenderer {
   private gradientKey = '';
   private skyTex: Texture | null = null;
   private skyTexPath = '';
+  private reflGradient: DynamicTexture | null = null;
+  private reflSky: Texture | null = null;
   private pipeline: DefaultRenderingPipeline | null = null;
+  /** Equirectangular reflection of the sky for materials (null without a sky): MaterialCache reads it. */
+  reflection: Texture | null = null;
   private pipelineCamera: BCamera | null = null;
 
   constructor(private readonly scene: BScene) {}
@@ -35,6 +39,7 @@ export class EnvironmentRenderer {
     const s = this.scene;
     const ip = s.imageProcessingConfiguration;
     if (!env) {
+      this.reflection = null;
       this.dome?.setEnabled(false);
       s.fogMode = BScene.FOGMODE_NONE;
       ip.toneMappingEnabled = false;
@@ -62,15 +67,20 @@ export class EnvironmentRenderer {
     ip.vignetteWeight = env.vignetteWeight;
     // sky
     let clear = cameraClear;
-    if (env.sky === 'Camera Color') this.dome?.setEnabled(false);
+    if (env.sky === 'Camera Color') {
+      this.dome?.setEnabled(false);
+      this.reflection = null;
+    }
     else {
       const mat = this.ensureDome();
       this.dome!.setEnabled(true);
       if (env.sky === 'Gradient') {
         mat.emissiveTexture = this.gradientTexture(env);
+        this.reflection = this.reflGradient;
         clear = env.skyHorizon;
       } else {
         mat.emissiveTexture = this.skyTexture(env.skyTexture);
+        this.reflection = this.reflSky;
         clear = env.skyHorizon;
       }
       // StandardMaterial adds emissiveColor to the emissive texture: keep it black, the texture level is the intensity
@@ -110,10 +120,23 @@ export class EnvironmentRenderer {
     if (this.gradient && key === this.gradientKey) return this.gradient;
     if (!this.gradient) this.gradient = new DynamicTexture('__skyGradient', { width: 4, height: 256 }, this.scene, false);
     this.gradientKey = key;
-    const ctx = this.gradient.getContext();
+    // the same picture as an equirectangular reflection map (a separate texture: its sampling mode differs)
+    if (!this.reflGradient) {
+      this.reflGradient = new DynamicTexture('__skyReflection', { width: 4, height: 256 }, this.scene, false);
+      this.reflGradient.coordinatesMode = Texture.EQUIRECTANGULAR_MODE;
+    }
+    this.drawGradient(this.reflGradient, env, true);
+    this.drawGradient(this.gradient, env, false);
+    this.gradient.wrapU = Texture.CLAMP_ADDRESSMODE;
+    this.gradient.wrapV = Texture.CLAMP_ADDRESSMODE;
+    return this.gradient;
+  }
+
+  private drawGradient(tex: DynamicTexture, env: Environment, reflection: boolean): void {
+    const ctx = tex.getContext();
     const css = (c: Color3) => `rgb(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)})`;
-    // the canvas bottom row (y = 256) maps to the top of the sphere: the gradient runs upwards
-    const g = ctx.createLinearGradient(0, 256, 0, 0);
+    // dome: the canvas bottom row (y = 256) maps to the top of the sphere; reflection maps run top-down
+    const g = reflection ? ctx.createLinearGradient(0, 0, 0, 256) : ctx.createLinearGradient(0, 256, 0, 0);
     // the top colour takes over quickly above the horizon (a thin bright band, like a real sky)
     const mid = Color3.Lerp(env.skyTop, env.skyHorizon, 0.45);
     g.addColorStop(0, css(env.skyTop));
@@ -124,18 +147,18 @@ export class EnvironmentRenderer {
     g.addColorStop(1, css(env.skyBottom));
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 4, 256);
-    this.gradient.update(true);
-    this.gradient.wrapU = Texture.CLAMP_ADDRESSMODE;
-    this.gradient.wrapV = Texture.CLAMP_ADDRESSMODE;
-    return this.gradient;
+    tex.update(true);
   }
 
   private skyTexture(path: string): Texture | null {
     if (!path) return null;
     if (this.skyTex && this.skyTexPath === path) return this.skyTex;
     this.skyTex?.dispose();
+    this.reflSky?.dispose();
     this.skyTex = new Texture(Assets.url(path), this.scene);
     this.skyTex.uScale = -1; // seen from inside
+    this.reflSky = new Texture(Assets.url(path), this.scene);
+    this.reflSky.coordinatesMode = Texture.EQUIRECTANGULAR_MODE;
     this.skyTexPath = path;
     return this.skyTex;
   }
@@ -171,6 +194,8 @@ export class EnvironmentRenderer {
     this.dome?.dispose();
     this.domeMat?.dispose();
     this.gradient?.dispose();
+    this.reflGradient?.dispose();
+    this.reflSky?.dispose();
     this.skyTex?.dispose();
   }
 }

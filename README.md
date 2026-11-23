@@ -174,6 +174,7 @@ cao 720 px (tự co giãn theo khung):
 - Gán cho Mesh qua field **Material** (hoặc kéo file material thả lên object trong Runtime view). Khi có material, các field màu /
   texture riêng của Mesh được ẩn; với model `.glb`, material thay cho material gốc của model (bỏ chọn là trở lại như cũ).
 - Script: `mesh.material.color = new Color3(1, 0, 0)` đổi màu cho mọi object dùng chung material đó.
+- Khi scene có Environment với bầu trời, vật kim loại / bóng phản chiếu trời (càng Metallic + ít Roughness càng rõ, sáng hơn ở mép).
 
 ## Environment (trời, sương mù, hậu kỳ)
 
@@ -242,7 +243,8 @@ chạm), Input (actions). Thay đổi áp dụng ngay trong editor; **Save** ghi
 giữ nguyên trạng thái (không gọi onDestroy / start lại) — ví dụ trình phát nhạc, dữ liệu phiên chơi. Timer / tween của nó trên
 scene cũ bị huỷ.
 
-## Giới hạn hiện tại (mốc 5)
+## Giới hạn hiện tại
 
-Chưa có root motion (clip di chuyển nhân vật). Material dùng ánh sáng Blinn-Phong
-(Metallic / Roughness được quy đổi, chưa có phản chiếu môi trường). Game dùng vật lý nặng thêm ~3,5 MB (Rapier bản nhúng WASM).
+Chưa có root motion (clip tự di chuyển nhân vật). Material dùng ánh sáng Blinn-Phong: Metallic / Roughness được quy đổi, phản
+chiếu môi trường lấy từ bầu trời của Environment (gradient hoặc ảnh 360°) nhưng chưa làm mờ theo Roughness. Game dùng vật lý tải
+thêm file `rapier3d.wasm` (~3 MB, nén còn ~1 MB khi server bật gzip / brotli).

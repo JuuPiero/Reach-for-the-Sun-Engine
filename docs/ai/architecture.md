@@ -179,3 +179,10 @@ marks in `_nestedPrefab` / `_nestedPid`; the nested root has no `prefab`), so ov
 against the nested prefab (`collapseInstance` with `nestedAccess`); Apply then moves every id into A's id space with
 `remapJsonIds` (ids, references, override id maps, added children). createPrefab keeps instances inside nested and turns the
 source object into a clean instance (same ids). The editor rebuilds the scene on any prefab file change (nesting).
+
+## 12. Sky reflections
+`EnvironmentRenderer.reflection` = an equirectangular copy of the sky (gradient drawn top-down into `__skyReflection`, or the sky
+image with `EQUIRECTANGULAR_MODE`; separate textures because the dome samples by UV). The backend hands it to `MaterialCache`
+at the start of each sync (one frame late); `apply` sets it as `reflectionTexture` on glossy / metallic materials with
+per-material `reflectionFresnelParameters` (left = edge, right = facing; metals tinted by their colour) — the texture stays
+shared — and lowers metal diffuse while a sky exists.

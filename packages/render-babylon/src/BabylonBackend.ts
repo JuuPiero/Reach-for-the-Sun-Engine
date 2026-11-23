@@ -121,6 +121,7 @@ export class BabylonBackend {
     let clear: Color3 | null = null;
     let env: Environment | null = null;
     this.materials.beginFrame();
+    this.materials.reflection = this.environment.reflection; // last frame's sky (the Environment is found during the walk)
     const pf = { playing: opts.playing ?? true, timeScale: opts.timeScale ?? Application.timeScale, dt: opts.dt ?? Application.unscaledDeltaTime, texture: (p: string) => this.materials.texture(p) };
     const shadowGens: ShadowGenerator[] = [];
     const casters: AbstractMesh[] = [];

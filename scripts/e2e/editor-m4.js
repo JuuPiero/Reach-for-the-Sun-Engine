@@ -42,16 +42,19 @@
   const before = spinner.material.diffuseColor.g;
   const old = metal.color.clone();
   metal.color = new core.Color3(0.2, 0.9, 0.2); // not saved through setField: in-memory only
-  check('material edit shows live', await until(() => spinner.material.diffuseColor.g > before + 0.1));
+  check('material edit shows live', await until(() => spinner.material.diffuseColor.g > before * 2 + 0.02), [before, spinner.material.diffuseColor.g]);
   metal.color = old;
   // environment
   check('sky dome on', await until(() => bs.getMeshByName('__sky')?.isEnabled()));
   check('fog linear from the Environment', bs.fogMode === 3 && bs.fogStart === 25 && bs.fogEnd === 70, { mode: bs.fogMode, s: bs.fogStart, e: bs.fogEnd });
   check('ACES tone mapping', bs.imageProcessingConfiguration.toneMappingEnabled && bs.imageProcessingConfiguration.toneMappingType === 1);
   check('FXAA pipeline', !!bs.postProcessRenderPipelineManager.supportedPipelines.find((p) => p._name === '__rsPipeline'));
+  const metalMat = () => V.backend.meshesOf(E.scene.find('Spinner_A'))[0].material;
+  check('metal reflects the sky', await until(() => metalMat().reflectionTexture?.name === '__skyReflection' && !!metalMat().reflectionFresnelParameters));
   const envGo = E.scene.find('Environment');
   envGo.getComponent('Environment').enabled = false;
   check('disabled Environment = camera colour, no fog', await until(() => bs.fogMode === 0 && !bs.getMeshByName('__sky').isEnabled()));
+  check('no sky, no reflection', await until(() => !metalMat().reflectionTexture));
   envGo.getComponent('Environment').enabled = true;
   // particles: coin prefab sparkles in edit? (coins spawn in play) — CoinBurst has simulateInEdit off
   // create a particle system from the shelf kind: previews in edit mode
