@@ -74,6 +74,33 @@ interface UndoEntry {
   time: number;
 }
 
+export type RenderMode = 'default' | 'wireframe' | 'points' | 'bounds' | 'nopost';
+export interface ViewOptions {
+  grid: boolean;
+  colliders: boolean;
+  ui: boolean;
+  /** Rendering: drop-down of the Runtime view. */
+  render: RenderMode;
+  /** Performance overlay at the top-left of the view. */
+  stats: boolean;
+  /** Editor light / camera icons. */
+  icons: boolean;
+  muted: boolean;
+  /** Move gizmo snap step (0 = off). */
+  snap: number;
+  /** Hierarchies refresh interval while playing (ms). */
+  hierarchyInterval: number;
+}
+const VIEW_KEY = 'rs.view';
+function loadViewOptions(): ViewOptions {
+  const d: ViewOptions = { grid: true, colliders: false, ui: true, render: 'default', stats: true, icons: true, muted: false, snap: 0, hierarchyInterval: 500 };
+  try {
+    return { ...d, ...(JSON.parse(localStorage.getItem(VIEW_KEY) ?? '{}') as Partial<ViewOptions>) };
+  } catch {
+    return d;
+  }
+}
+
 /** In-memory snapshots (undo, play, rebuilds) keep linked folders' content inline. */
 const INLINE = { inlineLinked: true };
 
@@ -109,6 +136,17 @@ export class Editor {
   flying = false;
   /** Canvas of the Runtime view (play mode input). */
   gameElement: HTMLElement | null = null;
+  /** Runtime view display options (toolbar, View / Develop menus); changes emit 'gizmo'. Saved in localStorage. */
+  view: ViewOptions = loadViewOptions();
+  setView(patch: Partial<ViewOptions>): void {
+    Object.assign(this.view, patch);
+    try {
+      localStorage.setItem(VIEW_KEY, JSON.stringify(this.view));
+    } catch {
+      /* private mode */
+    }
+    this.emit('gizmo');
+  }
 
   constructor() {
     Debug.onLog((e) => {
@@ -116,6 +154,11 @@ export class Editor {
       if (this.logs.length > 500) this.logs.splice(0, this.logs.length - 500);
       this.emit('log');
     });
+  }
+
+  clearLogs(): void {
+    this.logs.length = 0;
+    this.emit('log');
   }
 
   // ---- events -----------------------------------------------------------------------------------------------------------
@@ -203,6 +246,7 @@ export class Editor {
       this.selection = [];
       this.selectedFolder = null;
     } else this.selection = this.selection.filter((id) => !!s.findById(id));
+    this.loadLocks();
     this.emit('scene', 'selection', 'inspector');
   }
 
@@ -347,6 +391,59 @@ export class Editor {
   }
   redo(): void {
     this.restore(this.redoStack, this.undoStack);
+  }
+  /** Labels of the undo / redo steps, most recent first (toolbar history drop-downs). */
+  get undoLabels(): string[] {
+    return this.undoStack.map((e) => e.label).reverse();
+  }
+  get redoLabels(): string[] {
+    return this.redoStack.map((e) => e.label).reverse();
+  }
+  /** Undo (n > 0) or redo (n < 0) |n| steps at once. */
+  undoSteps(n: number): void {
+    for (let i = 0; i < Math.abs(n); i++) (n > 0 ? this.undo() : this.redo());
+  }
+
+  // ---- locked objects (editor-only: not pickable in the Runtime view, kept per scene in localStorage) ---------------
+  private lockedIds = new Set<number>();
+  private lockKey(): string {
+    return `rs.locked:${this.projectRoot}:${this.scene.path ?? ''}`;
+  }
+  private loadLocks(): void {
+    try {
+      this.lockedIds = new Set(JSON.parse(localStorage.getItem(this.lockKey()) ?? '[]') as number[]);
+    } catch {
+      this.lockedIds = new Set();
+    }
+  }
+  /** Locked = this object or an ancestor is locked. */
+  isLocked(go: GameObject): boolean {
+    for (let g: GameObject | null = go; g; g = g.parent) if (this.lockedIds.has(g.id)) return true;
+    return false;
+  }
+  isLockedSelf(go: GameObject): boolean {
+    return this.lockedIds.has(go.id);
+  }
+  setLocked(go: GameObject, locked: boolean): void {
+    if (locked) this.lockedIds.add(go.id);
+    else this.lockedIds.delete(go.id);
+    try {
+      localStorage.setItem(this.lockKey(), JSON.stringify([...this.lockedIds]));
+    } catch {
+      /* private mode */
+    }
+    this.emit('scene');
+  }
+
+  /** Save the scene (and linked sub-scenes) and flush pending UserData writes. */
+  async saveAll(): Promise<void> {
+    for (const [u, t] of this.udTimers) {
+      clearTimeout(t);
+      if (u.path) await this.write(u.path, serializeUserData(u));
+    }
+    this.udTimers.clear();
+    if (this.prefabMode) await this.savePrefab();
+    else await this.saveScene();
   }
   private restore(from: UndoEntry[], to: UndoEntry[]): void {
     if (this.mode !== 'edit') return;
@@ -555,6 +652,45 @@ export class Editor {
     this.recordUndo(`Add ${type}`);
     go.addComponent(type);
     this.changed(true);
+  }
+  /** Adds a component to every selected object (one undo step); `init` sets it up (Macro Shelf presets). */
+  addToSelection(type: string, init?: (c: Component) => void): number {
+    const t = Types.get(type);
+    const objs = this.selectedObjects.filter((g) => !(t?.options.single && g.getComponent(type)));
+    if (!t || !objs.length) {
+      Debug.warn(objs.length ? `Unknown component ${type}` : `Select GameObjects to add a ${type} to`);
+      return 0;
+    }
+    this.recordUndo(`Add ${type}`);
+    for (const g of objs) init?.(g.addComponent(type));
+    this.changed(true);
+    return objs.length;
+  }
+  /** New empty object at the centre of the selection holding the selected objects (same folder as the first one). */
+  groupSelection(): GameObject | null {
+    const objs = this.selectedObjects.filter((g) => !this.selectedObjects.some((o) => o !== g && isAncestor(o, g)));
+    if (!objs.length) return null;
+    this.recordUndo('Group');
+    const g = new GameObject(this.uniqueName('Group', (objs[0].folder ?? this.scene.root).gameObjects));
+    const c = new Vector3();
+    for (const o of objs) c.addInPlace(o.transform.position);
+    g.transform.localPosition.copyFrom(c.scale(1 / objs.length));
+    this.scene.add(g, objs[0].folder ?? this.scene.root);
+    g.transform.markDirty();
+    const inv = g.transform.worldMatrix.clone().invert();
+    for (const o of objs) {
+      const world = o.transform.worldMatrix.clone();
+      o._folder?.remove(o);
+      o._folder = null;
+      o._scene = null;
+      o.transform.setParent(g.transform, false);
+      world.multiply(inv).decompose(o.transform.localScale, o.transform.localRotation, o.transform.localPosition);
+      o.transform.markDirty();
+    }
+    this.scene.version++;
+    this.select([g.id]);
+    this.changed(true);
+    return g;
   }
   removeComponent(c: Component): void {
     this.recordUndo('Remove Component');

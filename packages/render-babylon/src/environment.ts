@@ -28,6 +28,8 @@ export class EnvironmentRenderer {
   private reflGradient: DynamicTexture | null = null;
   private reflSky: Texture | null = null;
   private pipeline: DefaultRenderingPipeline | null = null;
+  /** Editor "Rendering: No Post" mode: skip bloom / FXAA. */
+  noPost = false;
   /** Equirectangular reflection of the sky for materials (null without a sky): MaterialCache reads it. */
   reflection: Texture | null = null;
   private pipelineCamera: BCamera | null = null;
@@ -88,7 +90,7 @@ export class EnvironmentRenderer {
       if (mat.emissiveTexture) mat.emissiveTexture.level = env.skyIntensity;
     }
     if (env.fog !== 'None' && env.sky === 'Camera Color') clear = env.fogColor;
-    this.syncPipeline(env.bloom, env.fxaa, camera, env);
+    this.syncPipeline(env.bloom && !this.noPost, env.fxaa && !this.noPost, camera, env);
     return new Color4(clear.r, clear.g, clear.b, 1);
   }
 

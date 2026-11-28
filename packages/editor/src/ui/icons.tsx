@@ -335,6 +335,172 @@ export const Icons = {
       <circle cx="8" cy="8" r="2" />
     </I>
   ),
+  Pin: (p: P) => (
+    <I {...p}>
+      <path d="M6 2.5h4M7 2.5v4l-2.5 2.5h7L9 6.5v-4M8 9v5" />
+    </I>
+  ),
+  Close: (p: P) => (
+    <I {...p}>
+      <path d="M4 4l8 8M12 4l-8 8" />
+    </I>
+  ),
+  Lock: (p: P) => (
+    <I {...p}>
+      <rect x="3.5" y="7" width="9" height="7" />
+      <path d="M5.5 7V5a2.5 2.5 0 015 0v2" />
+    </I>
+  ),
+  CollapseAll: (p: P) => (
+    <I {...p}>
+      <rect x="2" y="2" width="12" height="12" />
+      <path d="M5 8h6" />
+    </I>
+  ),
+  ExpandAll: (p: P) => (
+    <I {...p}>
+      <rect x="2" y="2" width="12" height="12" />
+      <path d="M5 8h6M8 5v6" />
+    </I>
+  ),
+  Filter: (p: P) => (
+    <I {...p}>
+      <path d="M2 2.5h12l-4.5 5.5v5l-3 1.5v-6.5z" />
+    </I>
+  ),
+  Star: (p: P) => (
+    <I {...p}>
+      <path d="M8 1.8l1.9 4 4.3.5-3.2 3 .9 4.3L8 11.4l-3.9 2.2.9-4.3-3.2-3 4.3-.5z" />
+    </I>
+  ),
+  Back: (p: P) => (
+    <I {...p}>
+      <path d="M13.5 8h-11M6.5 4l-4 4 4 4" />
+    </I>
+  ),
+  Forward: (p: P) => (
+    <I {...p}>
+      <path d="M2.5 8h11M9.5 4l4 4-4 4" />
+    </I>
+  ),
+  Up: (p: P) => (
+    <I {...p}>
+      <path d="M8 13.5v-11M4 6.5l4-4 4 4" />
+    </I>
+  ),
+  SaveAll: (p: P) => (
+    <I {...p}>
+      <path d="M4.5 4.5v-3h8l2 2v8h-3" />
+      <path d="M1.5 4.5h8l2 2v8h-10z" />
+      <path d="M4 14.5v-3.5h5v3.5" />
+    </I>
+  ),
+  Chart: (p: P) => (
+    <I {...p}>
+      <path d="M2 14.5h12M3.5 12V8M6.5 12V4M9.5 12V6.5M12.5 12V2.5" />
+    </I>
+  ),
+  Fullscreen: (p: P) => (
+    <I {...p}>
+      <path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" />
+    </I>
+  ),
+  Speaker: (p: P) => (
+    <I {...p}>
+      <path d="M2 6h3l4-3.5v11L5 10H2z" />
+      <path d="M11 5.5a3.5 3.5 0 010 5M12.8 3.5a6 6 0 010 9" />
+    </I>
+  ),
+  Mute: (p: P) => (
+    <I {...p}>
+      <path d="M2 6h3l4-3.5v11L5 10H2z" />
+      <path d="M11 6l4 4M15 6l-4 4" />
+    </I>
+  ),
+  Cursor: (p: P) => (
+    <I {...p}>
+      <path d="M3 2l9.5 6-4.2.8 2.4 4.6-1.6.8-2.4-4.6L3.5 12.5z" />
+    </I>
+  ),
+  Link: (p: P) => (
+    <I {...p}>
+      <path d="M6.5 9.5l3-3M7 4.5l1.3-1.3a2.8 2.8 0 014 4L11 8.5M9 11.5l-1.3 1.3a2.8 2.8 0 01-4-4L5 7.5" />
+    </I>
+  ),
+  Wire: (p: P) => (
+    <I {...p}>
+      <path d="M8 1.5l6 3.5v6l-6 3.5-6-3.5V5z" />
+      <path d="M2 5l6 3.5L14 5M8 8.5v6M2 11l12-6M2 5l12 6" />
+    </I>
+  ),
+  Magnet: (p: P) => (
+    <I {...p}>
+      <path d="M3.5 2v6a4.5 4.5 0 009 0V2h-3v6a1.5 1.5 0 01-3 0V2z" />
+      <path d="M3.5 5h3M9.5 5h3" />
+    </I>
+  ),
+  Layout: (p: P) => (
+    <I {...p}>
+      <rect x="1.5" y="2.5" width="13" height="11" />
+      <path d="M1.5 5.5h13M5.5 5.5v8M11 5.5v8" />
+    </I>
+  ),
+  Import: (p: P) => (
+    <I {...p}>
+      <path d="M8 1.5v8M4.5 6l3.5 3.5L11.5 6M2 10.5v3.5h12v-3.5" />
+    </I>
+  ),
+  Tiles: (p: P) => (
+    <I {...p}>
+      <rect x="2" y="2" width="5" height="5" />
+      <rect x="9" y="2" width="5" height="5" />
+      <rect x="2" y="9" width="5" height="5" />
+      <rect x="9" y="9" width="5" height="5" />
+    </I>
+  ),
+  List: (p: P) => (
+    <I {...p}>
+      <path d="M5.5 4h9M5.5 8h9M5.5 12h9M2 4h1M2 8h1M2 12h1" />
+    </I>
+  ),
+  Bulb2: (p: P) => (
+    <I {...p}>
+      <circle cx="8" cy="8" r="3" />
+      <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6L13 13M3 13l1.4-1.4M11.6 4.4L13 3" />
+    </I>
+  ),
+  Photo: (p: P) => (
+    <I {...p}>
+      <rect x="1.5" y="4" width="13" height="9.5" />
+      <path d="M5.5 4l1-2h3l1 2" />
+      <circle cx="8" cy="8.7" r="2.5" />
+    </I>
+  ),
+  More: (p: P) => (
+    <I {...p}>
+      <circle cx="8" cy="3.5" r="0.6" />
+      <circle cx="8" cy="8" r="0.6" />
+      <circle cx="8" cy="12.5" r="0.6" />
+    </I>
+  ),
+  Collider: (p: P) => (
+    <I {...p}>
+      <rect x="2.5" y="2.5" width="11" height="11" strokeDasharray="2 1.5" />
+      <path d="M5.5 10.5l5-5" />
+    </I>
+  ),
+  Body: (p: P) => (
+    <I {...p}>
+      <circle cx="8" cy="7" r="4.5" />
+      <path d="M8 11.5v3M6 14.5h4" />
+    </I>
+  ),
+  Debug: (p: P) => (
+    <I {...p}>
+      <rect x="5" y="4.5" width="6" height="9" rx="3" />
+      <path d="M6 4.5l-1.5-2M10 4.5l1.5-2M5 8H2M14 8h-3M5 11.5l-2.5 1.5M11 11.5l2.5 1.5" />
+    </I>
+  ),
 };
 
 /** Icon of a GameObject from its components. */

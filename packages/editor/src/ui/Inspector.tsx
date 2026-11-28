@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AudioEngine, MissingComponent, Physics, Quaternion, Types, Vector3, eulerDegFromQuat, quatFromEulerDeg, scriptTypes, type Component, type GameObject, type Material } from '@rs/core';
 import { editor } from '../editor/Editor';
 import { assetVisual, Icons } from './icons';
+import { FrameButtons } from './Frame';
 import { FieldRow, TextInput, Vec3Input } from './fields';
 import { FsmEditor } from './FsmEditor';
 import { useEditor, useTicker } from './hooks';
@@ -91,12 +92,10 @@ export function Inspector() {
   return (
     <div className="rs-panel rs-inspector">
       <div className="rs-inspector-title">
+        <Icons.Gear size={12} className="rs-inspector-icon" />
         <span>{title}</span>
         <span className="rs-grow" />
-        <span className="rs-frame-btn" title="Fields of the selection; asset settings when a file is selected">?</span>
-        <span className="rs-frame-btn" title="Clear the selection" onClick={() => (editor.select([]), void editor.selectAsset(null))}>
-          ✕
-        </span>
+        <FrameButtons help="Fields of the selection; asset settings when a file is selected" onClose={() => (editor.select([]), void editor.selectAsset(null))} />
       </div>
       <div className="rs-inspector-body">{body}</div>
     </div>
@@ -170,9 +169,14 @@ function ObjectInspector({ go, count }: { go: GameObject; count: number }) {
   };
   return (
     <div className="rs-object-inspector" ref={rootRef}>
-      <div className="rs-search rs-inspector-search">
-        <Icons.Search size={12} />
-        <input placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="rs-inspector-searchbar">
+        <div className="rs-search rs-inspector-search">
+          <Icons.Search size={12} />
+          <input placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
+        <button className="rs-tool" title="Clear the property filter" onClick={() => setQ('')}>
+          <Icons.Filter size={12} />
+        </button>
       </div>
       <div className="rs-object-head">
         <span className="rs-toggle" title="Update Self" onClick={() => flag('updateSelf', !go.updateSelf)}>
@@ -224,6 +228,12 @@ function ObjectInspector({ go, count }: { go: GameObject; count: number }) {
       ) : null}
       <PrefabBar go={go} />
       <Section title="Transform" right={<span className="rs-help" title="Position / rotation / scale (Global = world, Local = relative to the parent)">?</span>}>
+      <div className="rs-field">
+        <label>UniversalPosition</label>
+        <div className="rs-field-value">
+          <Vec3Input value={t.position} onChange={multiT('Position', (g) => g.transform.position, (g, v) => (g.transform.position = v))} />
+        </div>
+      </div>
       <Section title="Global" sub>
         <div className="rs-field">
           <label>Position</label>
@@ -264,9 +274,45 @@ function ObjectInspector({ go, count }: { go: GameObject; count: number }) {
           </div>
         </div>
       </Section>
-      <Section title="General" sub defaultOpen={false}>
-        <div className="rs-hint">
-          Id {go.id} · {go.children.length} children · folder {go.folder?.path || 'Root'}
+      <Section title="General" sub>
+        <div className="rs-field">
+          <label>Id</label>
+          <div className="rs-field-value rs-ro">{go.id}</div>
+        </div>
+        <div className="rs-field">
+          <label>Parent</label>
+          <div className="rs-field-value rs-ro">{go.parent ? `${go.parent.name} #${go.parent.id}` : '(none)'}</div>
+        </div>
+        <div className="rs-field">
+          <label>Folder</label>
+          <div className="rs-field-value rs-ro">{go.folder?.path || 'Root'}</div>
+        </div>
+        <div className="rs-field">
+          <label>NumChildren</label>
+          <div className="rs-field-value rs-ro">{go.children.length}</div>
+        </div>
+        <div className="rs-field">
+          <label>Locked</label>
+          <div className="rs-field-value">
+            <input type="checkbox" checked={editor.isLockedSelf(go)} onChange={(e) => editor.setLocked(go, e.target.checked)} title="Not pickable in the Runtime view (editor only)" />
+          </div>
+        </div>
+        <div className="rs-field">
+          <label>resetTransform</label>
+          <div className="rs-field-value">
+            <button className="rs-btn small rs-wide" onClick={() => {
+              editor.recordUndo('Reset Transform');
+              for (const g of objs) {
+                g.transform.localPosition.set(0, 0, 0);
+                g.transform.localRotation.set(0, 0, 0, 1);
+                g.transform.localScale.set(1, 1, 1);
+                g.transform.markDirty();
+              }
+              editor.changed();
+            }}>
+              resetTransform
+            </button>
+          </div>
         </div>
       </Section>
       </Section>
@@ -406,6 +452,10 @@ function ComponentView({ c, others }: { c: Component; others: Component[] }) {
   const info = Types.of(c.constructor);
   const menu = (e: React.MouseEvent) =>
     showContextMenu(e, [
+      { label: 'Reset', action: () => resetComponent(c), disabled: c instanceof MissingComponent },
+      { label: 'Move Up', action: () => moveComponent(c, -1), disabled: c.gameObject.components.indexOf(c) <= 0 },
+      { label: 'Move Down', action: () => moveComponent(c, 1), disabled: c.gameObject.components.indexOf(c) >= c.gameObject.components.length - 1 },
+      { separator: true },
       { label: 'Remove Component', action: () => editor.removeComponent(c) },
       ...(info?.script ? [{ label: `Open ${info.script}`, action: () => openInIde(info.script!) }] : []),
     ]);
@@ -427,9 +477,14 @@ function ComponentView({ c, others }: { c: Component; others: Component[] }) {
         </>
       }
       right={
-        <button className="rs-mini" title="Remove" onClick={() => editor.removeComponent(c)}>
-          <Icons.Trash size={11} />
-        </button>
+        <>
+          <span className="rs-help" title={COMPONENT_HELP[name] ?? (info?.script ? `Script component defined in ${info.script}` : name)}>
+            ?
+          </span>
+          <button className="rs-mini" title="Component menu" onClick={(e) => menu(e)}>
+            <Icons.More size={11} />
+          </button>
+        </>
       }
       onContext={menu}
     >
@@ -440,6 +495,52 @@ function ComponentView({ c, others }: { c: Component; others: Component[] }) {
       )}
     </Section>
   );
+}
+
+/** Help tooltips of built-in components (the "?" of their header). */
+const COMPONENT_HELP: Record<string, string> = {
+  Mesh: 'Draws a primitive shape or a glTF model with a material',
+  Camera: 'Renders the scene; the Main camera draws the game',
+  DirectionalLight: 'Sun-like light with shadows',
+  PointLight: 'Light shining in every direction from a point',
+  SpotLight: 'Cone of light',
+  AmbientLight: 'Sky / ground lighting for the whole scene',
+  Collider: 'Physics shape; static unless the object or a parent has a RigidBody',
+  RigidBody: 'Simulated (Dynamic), script-driven (Kinematic) or fixed (Static) physics body',
+  CharacterController: 'Capsule moved by move(): slides on walls, climbs steps, stays grounded',
+  Motion: 'Plays the animation clips of the model (cross-fades, FSM)',
+  AudioSource: 'Plays a sound clip, optionally positioned in 3D',
+  AudioListener: 'The ears of the scene (usually on the camera)',
+  ParticleSystem: 'Emits particles (shape, rate, bursts, size / colour over life)',
+  Environment: 'Sky, fog, tone mapping, bloom and FXAA',
+  UIText: 'Text drawn over the game',
+  UIImage: 'Image drawn over the game',
+  UIPanel: 'Rectangle drawn over the game (UI container)',
+  UIButton: 'Clickable UI button calling a method',
+};
+
+/** Back to the field values of a new instance (one undo step). */
+function resetComponent(c: Component): void {
+  editor.recordUndo('Reset Component');
+  const fresh = new (c.constructor as new () => Component)();
+  const rec = c as unknown as Record<string, unknown>;
+  const def = fresh as unknown as Record<string, unknown>;
+  for (const f of editor.fieldsOf(c)) {
+    const v = def[f.name];
+    rec[f.name] = v && typeof v === 'object' && 'clone' in v ? (v as { clone(): unknown }).clone() : Array.isArray(v) ? [...v] : v;
+  }
+  editor.changed();
+}
+
+function moveComponent(c: Component, d: number): void {
+  const list = c.gameObject.components as Component[];
+  const i = list.indexOf(c);
+  const j = i + d;
+  if (i < 0 || j < 0 || j >= list.length) return;
+  editor.recordUndo('Move Component');
+  list.splice(i, 1);
+  list.splice(j, 0, c);
+  editor.changed(true);
 }
 
 function openInIde(path: string): void {

@@ -73,6 +73,8 @@ export interface SyncOptions {
   timeScale?: number;
   /** Frame time for edit previews (seconds). */
   dt?: number;
+  /** Skip post-processing (bloom / FXAA): editor "Rendering: No Post". */
+  noPost?: boolean;
   /** Draw Debug.drawLine lines (default Debug.showLines). */
   debugLines?: boolean;
 }
@@ -216,6 +218,7 @@ export class BabylonBackend {
     } else this.defaultLight?.setEnabled(false);
     const camera = opts.camera ?? this.mainCamera ?? this.fallbackCamera;
     if (this.scene.activeCamera !== camera) this.scene.activeCamera = camera;
+    this.environment.noPost = !!opts.noPost;
     this.scene.clearColor = this.environment.sync(env, camera, clear ?? new Color3(0.16, 0.17, 0.2));
     this.materials.prune();
     this.debugLines.sync((opts.debugLines ?? Debug.showLines) ? Debug._lines : []);
@@ -230,16 +233,25 @@ export class BabylonBackend {
     this.engine.resize();
   }
 
-  /** GameObject under a canvas point (CSS pixels), or null. */
-  pick(x: number, y: number): GameObject | null {
-    const r = this.scene.pick(x * (this.engine.getRenderWidth() / (this.engine.getRenderingCanvas()!.clientWidth || 1)), y * (this.engine.getRenderHeight() / (this.engine.getRenderingCanvas()!.clientHeight || 1)), (m) => m.isPickable && m.isEnabled() && m.isVisible);
-    let n = r?.pickedMesh ?? null;
-    while (n) {
-      const go = (n.metadata as { rsObject?: GameObject } | null)?.rsObject;
-      if (go) return go;
-      n = n.parent as AbstractMesh | null;
-    }
-    return null;
+  /** GameObject under a view point (CSS px). `accept` skips objects (the editor's locked ones) and picks what is behind. */
+  pick(x: number, y: number, accept?: (go: GameObject) => boolean): GameObject | null {
+    const ownerOf = (m: AbstractMesh): GameObject | null => {
+      let n: AbstractMesh | null = m;
+      while (n) {
+        const go = (n.metadata as { rsObject?: GameObject } | null)?.rsObject;
+        if (go) return go;
+        n = n.parent as AbstractMesh | null;
+      }
+      return null;
+    };
+    const canvas = this.engine.getRenderingCanvas()!;
+    const r = this.scene.pick(x * (this.engine.getRenderWidth() / (canvas.clientWidth || 1)), y * (this.engine.getRenderHeight() / (canvas.clientHeight || 1)), (m) => {
+      if (!m.isPickable || !m.isEnabled() || !m.isVisible) return false;
+      if (!accept) return true;
+      const go = ownerOf(m);
+      return !go || accept(go);
+    });
+    return r?.pickedMesh ? ownerOf(r.pickedMesh) : null;
   }
 
   dispose(): void {

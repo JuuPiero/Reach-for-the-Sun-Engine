@@ -93,21 +93,36 @@ export class Player extends Behavior {
 - **Hierarchies**: cây Folder / GameObject (folder chữ xanh đậm, object chữ nghiêng), hai nút bật/tắt Update / Draw ở đầu mỗi
   dòng, mũi tên mở / đóng, tìm kiếm. Kéo thả để đổi cha / đổi folder / sắp xếp (thả vào giữa dòng = làm con, mép trên / dưới =
   chèn trước / sau), F2 hoặc double-click để đổi tên, chuột phải: Create, Rename, Duplicate, Create Prefab, Unparent, Delete.
-- **Macro Shelf**: các tab Primitive / Light / Level / UI / Audio / Asset với nút tạo nhanh (Cube, Sphere, Floor, đèn, camera, folder, Text, Button, Sound, script…).
+  Thanh công cụ: chọn cha, làm mới, thu gọn / mở hết, hiện object đang chọn, tạo folder / object, ô **chu kỳ làm mới** khi Play
+  (100 ms – 2 s). Cột thứ ba của mỗi dòng là **khoá** (object khoá — và con của nó — không chọn được bằng click trong Runtime view;
+  lưu riêng cho editor, không vào file scene). Ô tìm kiếm: tên, hoặc `t:Collider` để lọc theo loại component.
+- **Macro Shelf**: hai hàng tab (Common, Primitive, Light, Camera, Collision, Dynamics, Motion, Material, VFX, Env, UI, Sound,
+  Asset, Render, Debug, Profiler, Viewer) với nút vuông bấm một lần: tạo object, **thêm component cho các object đang chọn**
+  (Collision ▸ Box / Sphere / Capsule / Trigger, Dynamics ▸ Dynamic / Kinematic / Character), Group, đặt object theo camera
+  editor (Camera ▸ To View), đổi chế độ vẽ, bật tắt collider / lưới / icon / bảng hiệu năng.
 - **Runtime view**: camera editor — giữ chuột phải để nhìn + W/A/S/D/Q/E để bay (lăn chuột khi đang giữ để đổi tốc độ, Shift
   để nhanh), chuột giữa để kéo ngang, lăn chuột để tiến / lùi, Alt + chuột trái để xoay quanh, F để nhìn vào object đang chọn.
   Click để chọn (Ctrl / Shift để chọn thêm), gizmo Move / Rotate / Scale (W / E / R), Local / Global, lưới, viền cam cho object
   đang chọn, icon cho đèn / camera. Thả prefab / model `.glb` từ AssetBrowser vào view để đặt tại điểm chuột.
-  View: Default (edit = camera editor, play = camera game) / Editor Camera / Game Camera.
+  View: Default (edit = camera editor, play = camera game) / Editor Camera / Game Camera. **Rendering**: Default / Wireframe /
+  Points / Bounding Boxes / No Post Effects. Thanh công cụ còn có Snap (0,5 m / 15°), icon đèn & camera, collider, UI, chụp ảnh
+  view (PNG), **bảng hiệu năng** góc trên trái (FPS, thời gian frame / update / render kèm thanh, số object / mesh / tam giác /
+  hạt / xương, bộ nhớ), tắt tiếng, phóng to view.
 - **Inspector**: tên, tag, Update / Draw, **Add Component**, Transform **Global** (Position / Rotation / Scale) và **Local**,
   từng component có checkbox bật / tắt, nút xoá, các field (kéo nhãn X/Y/Z để thay đổi nhanh, phím ↑ / ↓ tăng giảm, gõ biểu
-  thức `2*3`). Chọn asset trong AssetBrowser: UserData chỉnh trực tiếp, scene (Open), prefab (Add to Scene), script (các class
+  thức `2*3`); **UniversalPosition** (vị trí thế giới) trên cùng, nhóm General (Id, cha, folder, khoá, resetTransform); header
+  component có nút **?** (giải thích) và menu ⋮ (Reset, Move Up / Down, Remove). Chọn asset trong AssetBrowser: UserData chỉnh trực tiếp, scene (Open), prefab (Add to Scene), script (các class
   định nghĩa, Open in VS Code), texture (xem trước), material (quả cầu xem trước + chỉnh), âm thanh (Play / Stop, thời lượng).
 - **AssetBrowser**: cây thư mục + Favorites, breadcrumb, ô asset có icon màu theo loại (Scene tím, Prefab xanh dương, UserData
   hồng, Script xanh lá, Model, Texture có ảnh thu nhỏ). Create ▸ Folder / Scene / Script / UserData, F2 đổi tên, Del xoá,
-  double-click mở (thư mục, scene, script trong VS Code), kéo ô vào thư mục để di chuyển.
+  double-click mở (thư mục, scene, script trong VS Code), kéo ô vào thư mục để di chuyển. Thanh trên: Import (chép file từ máy —
+  cũng có thể kéo file từ Explorer thả vào), Save All, Back / Forward / Up, đường dẫn dạng `Assets ▸ Scripts ▸`, đổi cỡ ô (lớn /
+  nhỏ / danh sách). **Quick Access**: kéo thư mục vào để ghim. Lọc theo loại asset, nút ★ = Favorites, mỗi ô có dấu trạng thái
+  (xanh = đã lưu, cam = scene đang mở có thay đổi chưa lưu), chân trang "Total: N Assets".
 - **Play** (Ctrl+P) / Pause / Step / Stop: game chạy ngay trong Runtime view; Stop trả scene về như trước khi Play (giống RE,
-  thay đổi trong lúc chơi không được giữ). Undo / Redo (Ctrl+Z / Ctrl+Y), Duplicate (Ctrl+D), Save (Ctrl+S).
+  thay đổi trong lúc chơi không được giữ). Undo / Redo (Ctrl+Z / Ctrl+Y; mũi tên ▾ cạnh nút = lịch sử, nhảy nhiều bước một lần),
+  Duplicate (Ctrl+D), Group (Ctrl+G), Save (Ctrl+S), Save All (Ctrl+Alt+S: scene, sub-scene, UserData đang chờ ghi). Menu:
+  File / Edit / View / GameObject / Component / Project / Windows / Develop / Help; ô Layout(…) ở góc phải chọn bố cục cửa sổ.
 - **Live coding**: sửa / thêm script là editor nạp lại ngay, component trong scene dùng class mới mà không mất dữ liệu. Script
   lỗi / bị xoá: component thành "missing script" nhưng dữ liệu vẫn được giữ và lưu lại.
 - File ▸ **Build Game (Web)**: build ngay từ editor, kết quả ghi ở Console.

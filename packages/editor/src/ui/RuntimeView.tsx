@@ -15,8 +15,8 @@ import '@babylonjs/core/Rendering/outlineRenderer';
 import { AmbientLight, Camera, CharacterController, Collider, DirectionalLight, Motion, PointLight, SpotLight, type GameObject } from '@rs/core';
 import { BabylonBackend } from '@rs/render-babylon';
 import { UIRenderer } from '../../../runtime/src/UIRenderer';
-import { Application, Assets, Screen } from '@rs/core';
-import { editor } from '../editor/Editor';
+import { Application, Assets, AudioEngine, Screen } from '@rs/core';
+import { editor, type RenderMode } from '../editor/Editor';
 import { DT_ASSET } from './Hierarchies';
 import { useEditor } from './hooks';
 import { Icons } from './icons';
@@ -29,19 +29,12 @@ export function RuntimeView() {
   useEditor('mode', 'gizmo', 'selection');
   const host = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [stats, setStats] = useState('');
+  const [stats, setStats] = useState<ViewStats | null>(null);
   const [view, setView] = useState<'auto' | 'editor' | 'game'>('auto');
-  const [showGrid, setShowGrid] = useState(true);
-  const [showColliders, setShowColliders] = useState(false);
-  const collidersRef = useRef(showColliders);
-  collidersRef.current = showColliders;
   const viewRef = useRef(view);
   viewRef.current = view;
-  const gridRef = useRef(showGrid);
-  gridRef.current = showGrid;
-  const [showUI, setShowUI] = useState(true);
-  const uiRef = useRef(showUI);
-  uiRef.current = showUI;
+  const vo = editor.view;
+  const [maximized, setMaximized] = useState(false);
   const focusRef = useRef<() => void>(() => {});
 
   useEffect(() => {
@@ -231,7 +224,7 @@ export function RuntimeView() {
       if (e.button === 0) orbit = false;
       if (e.button === 0 && down && !dragging && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 4 && usingEditorCam()) {
         const r = canvas.getBoundingClientRect();
-        const go = backend.pick(e.clientX - r.left, e.clientY - r.top) ?? pickMarker(e.clientX - r.left, e.clientY - r.top);
+        const go = backend.pick(e.clientX - r.left, e.clientY - r.top, (g) => !editor.isLocked(g)) ?? pickMarker(e.clientX - r.left, e.clientY - r.top);
         editor.select(go ? [go.id] : [], e.ctrlKey || e.shiftKey);
       }
       down = null;
@@ -277,6 +270,22 @@ export function RuntimeView() {
       saveCam();
     };
 
+    // Macro Shelf: Focus / To View
+    const onFocusEvt = () => focusRef.current();
+    const onAlign = () => {
+      const objs = editor.selectedObjects;
+      if (!objs.length) return;
+      editor.recordUndo('Align To View');
+      cam.computeWorldMatrix();
+      for (const g of objs) {
+        g.transform.position = cam.position.clone();
+        g.transform.rotation = cam.rotationQuaternion!.clone();
+      }
+      editor.changed();
+    };
+    window.addEventListener('rs:focus', onFocusEvt);
+    window.addEventListener('rs:align-to-view', onAlign);
+
     // ---- prefab / model drops
     const onDragOver = (e: DragEvent) => {
       if (e.dataTransfer?.types.includes(DT_ASSET)) e.preventDefault();
@@ -315,6 +324,10 @@ export function RuntimeView() {
     // ---- frame loop
     let last = performance.now();
     let statT = 0;
+    let lastMuted: boolean | null = null;
+    let frames = 0;
+    let updAcc = 0;
+    let rndAcc = 0;
     backend.engine.runRenderLoop(() => {
       const now = performance.now();
       const dt = (now - last) / 1000;
@@ -335,6 +348,7 @@ export function RuntimeView() {
             m.tick(dt);
           }
       }
+      const tUpd = performance.now();
       const editorView = usingEditorCam();
       // fly with RMB held
       if (editorView && rmb) {
@@ -349,11 +363,21 @@ export function RuntimeView() {
         timeScale: editor.mode === 'pause' ? 0 : editor.mode === 'play' ? Application.timeScale : 1,
         dt,
         debugLines: true,
+        noPost: editor.view.render === 'nopost',
       });
-      grid.setEnabled(editorView && gridRef.current);
+      // Rendering drop-down
+      const rm = editor.view.render;
+      bscene.forceWireframe = rm === 'wireframe';
+      bscene.forcePointsCloud = rm === 'points';
+      bscene.forceShowBoundingBoxes = rm === 'bounds';
+      if (lastMuted !== editor.view.muted) {
+        lastMuted = AudioEngine.muted = editor.view.muted;
+        AudioEngine.applyVolume();
+      }
+      grid.setEnabled(editorView && editor.view.grid);
       // markers for lights / cameras
       const seen = new Set<GameObject>();
-      if (editorView)
+      if (editorView && editor.view.icons)
         for (const go of scene.allGameObjects()) {
           const isCam = !!go.getComponent(Camera);
           const isLight = !!(go.getComponent(DirectionalLight) ?? go.getComponent(PointLight) ?? go.getComponent(SpotLight) ?? go.getComponent(AmbientLight));
@@ -380,7 +404,7 @@ export function RuntimeView() {
       // collider wireframes: the selection (and its children), or every collider with "Colliders" on
       const wantWires = new Set<object>();
       if (editorView) {
-        const objs = collidersRef.current ? scene.allGameObjects() : editor.selectedObjects.flatMap((g) => [...g.selfAndDescendants()]);
+        const objs = editor.view.colliders ? scene.allGameObjects() : editor.selectedObjects.flatMap((g) => [...g.selfAndDescendants()]);
         for (const go of objs) {
           const node = backend.nodeOf(go);
           if (!node || !go.activeInHierarchy) continue;
@@ -433,6 +457,8 @@ export function RuntimeView() {
       gizmos.rotationGizmoEnabled = !!target && editor.gizmo === 'rotate';
       gizmos.scaleGizmoEnabled = !!target && editor.gizmo === 'scale';
       const local = editor.gizmoSpace === 'local';
+      if (gizmos.gizmos.positionGizmo) gizmos.gizmos.positionGizmo.snapDistance = editor.view.snap;
+      if (gizmos.gizmos.rotationGizmo) gizmos.gizmos.rotationGizmo.snapDistance = editor.view.snap > 0 ? Math.PI / 12 : 0;
       if (gizmos.gizmos.positionGizmo) gizmos.gizmos.positionGizmo.updateGizmoRotationToMatchAttachedMesh = local;
       if (gizmos.gizmos.rotationGizmo) gizmos.gizmos.rotationGizmo.updateGizmoRotationToMatchAttachedMesh = local;
       const want = new Set<AbstractMesh>();
@@ -450,13 +476,34 @@ export function RuntimeView() {
           outlined.add(m);
         }
       backend.render();
-      ui.root.style.display = uiRef.current || editor.mode !== 'edit' ? '' : 'none';
+      if (wantShot) saveShot(canvas);
+      ui.root.style.display = editor.view.ui || editor.mode !== 'edit' ? '' : 'none';
       ui.sync(scene);
+      const tEnd = performance.now();
+      updAcc += tUpd - now;
+      rndAcc += tEnd - tUpd;
+      frames++;
       statT += dt;
-      if (statT > 0.5) {
+      if (statT > 0.5 && editor.view.stats) {
+        const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
+        setStats({
+          fps: backend.engine.getFps(),
+          frame: (statT * 1000) / Math.max(1, frames),
+          update: updAcc / Math.max(1, frames),
+          render: rndAcc / Math.max(1, frames),
+          objects: scene.allGameObjects().length,
+          meshes: bscene.getActiveMeshes().length,
+          tris: bscene.getActiveIndices() / 3,
+          particles: bscene.getActiveParticles(),
+          bones: bscene.getActiveBones(),
+          heap: mem ? mem.usedJSHeapSize / 1048576 : 0,
+          mode: editor.mode,
+          loading: backend.pendingLoads,
+        });
         statT = 0;
-        setStats(`FPS ${backend.engine.getFps().toFixed(1)}  ·  ${(dt * 1000).toFixed(1)} ms  ·  objects ${scene.allGameObjects().length}  ·  meshes ${bscene.getActiveMeshes().length}  ·  ${editor.mode.toUpperCase()}${backend.pendingLoads ? `  ·  loading ${backend.pendingLoads}` : ''}`);
-      }
+        frames = 0;
+        updAcc = rndAcc = 0;
+      } else if (statT > 0.5) statT = 0;
     });
     const ro = new ResizeObserver(() => {
       backend.resize();
@@ -470,6 +517,8 @@ export function RuntimeView() {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('keyup', ku);
+      window.removeEventListener('rs:focus', onFocusEvt);
+      window.removeEventListener('rs:align-to-view', onAlign);
       gizmos.dispose();
       ui.dispose();
       backend.dispose();
@@ -477,25 +526,33 @@ export function RuntimeView() {
     };
   }, []);
 
+  const tool = (on: boolean, title: string, onClick: () => void, icon: React.ReactNode, cls = 'rs-tool') => (
+    <button className={`${cls}${on ? ' active' : ''}`} title={title} onClick={onClick}>
+      {icon}
+    </button>
+  );
   return (
-    <div className="rs-panel rs-runtime">
+    <div className={`rs-panel rs-runtime${maximized ? ' maximized' : ''}`}>
       <div className="rs-view-bar">
         <span className="rs-view-label">View:</span>
-        <select value={view} onChange={(e) => setView(e.target.value as typeof view)}>
+        <select className="rs-view-select" value={view} onChange={(e) => setView(e.target.value as typeof view)} title="Camera that draws the view">
           <option value="auto">Default</option>
           <option value="editor">Editor Camera</option>
           <option value="game">Game Camera</option>
         </select>
+        <span className="rs-view-label">Rendering:</span>
+        <select className="rs-view-select" value={vo.render} onChange={(e) => editor.setView({ render: e.target.value as RenderMode })} title="Debug rendering mode of the view">
+          <option value="default">Default</option>
+          <option value="wireframe">Wireframe</option>
+          <option value="points">Points</option>
+          <option value="bounds">Bounding Boxes</option>
+          <option value="nopost">No Post Effects</option>
+        </select>
         <span className="rs-sep" />
-        <button className={`rs-tool${editor.gizmo === 'move' ? ' active' : ''}`} title="Move (W)" onClick={() => setGizmo('move')}>
-          <Icons.Move size={14} />
-        </button>
-        <button className={`rs-tool${editor.gizmo === 'rotate' ? ' active' : ''}`} title="Rotate (E)" onClick={() => setGizmo('rotate')}>
-          <Icons.Rotate size={14} />
-        </button>
-        <button className={`rs-tool${editor.gizmo === 'scale' ? ' active' : ''}`} title="Scale (R)" onClick={() => setGizmo('scale')}>
-          <Icons.Scale size={14} />
-        </button>
+        {tool(editor.gizmo === 'move', 'Move (W)', () => setGizmo('move'), <Icons.Move size={14} />)}
+        {tool(editor.gizmo === 'rotate', 'Rotate (E)', () => setGizmo('rotate'), <Icons.Rotate size={14} />)}
+        {tool(editor.gizmo === 'scale', 'Scale (R)', () => setGizmo('scale'), <Icons.Scale size={14} />)}
+        {tool(vo.snap > 0, vo.snap > 0 ? `Snap: ${vo.snap} m / 15° (click to turn off)` : 'Snap to 0.5 m / 15°', () => editor.setView({ snap: vo.snap > 0 ? 0 : 0.5 }), <Icons.Magnet size={14} />)}
         <button className={`rs-seg${editor.gizmoSpace === 'local' ? ' active' : ''}`} onClick={() => setSpace('local')}>
           Local
         </button>
@@ -503,26 +560,85 @@ export function RuntimeView() {
           Global
         </button>
         <span className="rs-sep" />
-        <button className={`rs-tool${showGrid ? ' active' : ''}`} title="Grid" onClick={() => setShowGrid(!showGrid)}>
-          <Icons.Grid size={14} />
-        </button>
-        <button className={`rs-seg${showColliders ? ' active' : ''}`} title="Show every collider (selected objects always show theirs)" onClick={() => setShowColliders(!showColliders)}>
-          Colliders
-        </button>
-        <button className={`rs-seg${showUI ? ' active' : ''}`} title="Show the in-game UI while editing" onClick={() => setShowUI(!showUI)}>
-          UI
-        </button>
-        <button className="rs-tool" title="Focus selection (F)" onClick={() => focusRef.current()}>
-          <Icons.Focus size={14} />
-        </button>
+        {tool(vo.grid, 'Grid', () => editor.setView({ grid: !vo.grid }), <Icons.Grid size={14} />)}
+        {tool(vo.icons, 'Light / camera icons', () => editor.setView({ icons: !vo.icons }), <Icons.Bulb2 size={14} />)}
+        {tool(vo.colliders, 'Show every collider (selected objects always show theirs)', () => editor.setView({ colliders: !vo.colliders }), <Icons.Collider size={14} />)}
+        {tool(vo.ui, 'Show the in-game UI while editing', () => editor.setView({ ui: !vo.ui }), <Icons.Panel size={14} />)}
+        {tool(vo.render === 'wireframe', 'Wireframe', () => editor.setView({ render: vo.render === 'wireframe' ? 'default' : 'wireframe' }), <Icons.Wire size={14} />)}
+        <span className="rs-sep" />
+        {tool(false, 'Focus selection (F)', () => focusRef.current(), <Icons.Focus size={14} />)}
+        {tool(false, 'Screenshot (saves a PNG of the view)', () => screenshot(canvasRef.current), <Icons.Photo size={14} />)}
+        {tool(vo.stats, 'Performance overlay', () => editor.setView({ stats: !vo.stats }), <Icons.Chart size={14} />)}
+        <span className="rs-grow" />
+        {tool(vo.muted, vo.muted ? 'Unmute' : 'Mute game audio', () => editor.setView({ muted: !vo.muted }), vo.muted ? <Icons.Mute size={14} /> : <Icons.Speaker size={14} />)}
+        {tool(maximized, 'Maximize the view', () => setMaximized(!maximized), <Icons.Fullscreen size={14} />)}
       </div>
       <div className="rs-view-host" ref={host}>
         <canvas ref={canvasRef} className="rs-view-canvas" tabIndex={0} data-focus-key="F" onKeyDown={(e) => e.code === 'KeyF' && !e.ctrlKey && focusRef.current()} />
-        <div className="rs-view-stats">{stats}</div>
+        {vo.stats && stats ? <StatsOverlay s={stats} /> : null}
         {editor.mode !== 'edit' ? <div className="rs-play-frame" /> : null}
       </div>
     </div>
   );
+}
+
+interface ViewStats {
+  fps: number;
+  frame: number;
+  update: number;
+  render: number;
+  objects: number;
+  meshes: number;
+  tris: number;
+  particles: number;
+  bones: number;
+  heap: number;
+  mode: string;
+  loading: number;
+}
+
+/** Performance overlay (top-left of the view): monospaced counters with frame-budget bars. */
+function StatsOverlay({ s }: { s: ViewStats }) {
+  const bar = (ms: number, color: string) => (
+    <span className="rs-stat-bar">
+      <span style={{ width: `${Math.min(100, (ms / 16.67) * 100)}%`, background: color }} />
+    </span>
+  );
+  const k = (n: number) => (n >= 10000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n)));
+  return (
+    <div className="rs-view-stats">
+      <div>
+        FPS {s.fps.toFixed(1).padStart(5)} FT {s.frame.toFixed(2).padStart(6)}ms {bar(s.frame, s.frame > 17 ? '#e5a33a' : '#3fd36b')} {s.mode.toUpperCase()}
+      </div>
+      <div>
+        Update {s.update.toFixed(2).padStart(6)}ms {bar(s.update, '#3fd36b')}
+      </div>
+      <div>
+        Render {s.render.toFixed(2).padStart(6)}ms {bar(s.render, '#3aa0ff')}
+      </div>
+      <div>
+        Objects {k(s.objects).padStart(5)} Meshes {k(s.meshes).padStart(5)} Tris {k(s.tris).padStart(6)}
+      </div>
+      <div>
+        Particles {k(s.particles).padStart(5)} Bones {k(s.bones).padStart(4)}
+        {s.heap ? ` Heap ${s.heap.toFixed(1)}MB` : ''}
+        {s.loading ? ` Loading ${s.loading}` : ''}
+      </div>
+    </div>
+  );
+}
+
+/** Screenshot request: taken by the frame loop right after a render (the drawing buffer is not preserved). */
+let wantShot = false;
+function screenshot(canvas: HTMLCanvasElement | null): void {
+  if (canvas) wantShot = true;
+}
+function saveShot(canvas: HTMLCanvasElement): void {
+  wantShot = false;
+  const a = document.createElement('a');
+  a.href = canvas.toDataURL('image/png');
+  a.download = `${editor.scene.name || 'view'}.png`;
+  a.click();
 }
 
 function setGizmo(g: 'move' | 'rotate' | 'scale') {

@@ -26,7 +26,8 @@ type Row = { kind: 'folder'; folder: Folder; depth: number; key: string } | { ki
 
 export function Hierarchies() {
   useEditor('scene', 'selection', 'mode');
-  useTicker(editor.mode === 'play', 500);
+  useEditor('gizmo');
+  useTicker(editor.mode === 'play', editor.view.hierarchyInterval);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [filter, setFilter] = useState('');
   useEffect(() => {
@@ -42,7 +43,12 @@ export function Hierarchies() {
     const out: Row[] = [];
     const f = filter.trim().toLowerCase();
     if (f) {
-      for (const g of scene.allGameObjects()) if (g.name.toLowerCase().includes(f)) out.push({ kind: 'object', go: g, depth: 0, key: `g:${g.id}` });
+      // 't:Type' = objects with a component of that type
+      const type = f.startsWith('t:') ? f.slice(2).trim() : null;
+      for (const g of scene.allGameObjects()) {
+        const hit = type !== null ? g.components.some((c) => Types.nameOf(c.constructor).toLowerCase().includes(type)) : g.name.toLowerCase().includes(f);
+        if (hit) out.push({ kind: 'object', go: g, depth: 0, key: `g:${g.id}` });
+      }
       return out;
     }
     const addObj = (g: GameObject, depth: number) => {
@@ -70,6 +76,21 @@ export function Hierarchies() {
       else n.add(key);
       return n;
     });
+
+  /** Expand the parents / folders of the selection and scroll its first row into view. */
+  const reveal = () => {
+    const sel = editor.selectedObjects;
+    if (!sel.length) return;
+    setCollapsed((s) => {
+      const n = new Set(s);
+      for (const g of sel) {
+        for (let p = g.parent; p; p = p.parent) n.delete(`g:${p.id}`);
+        for (let f = g.folder; f; f = f.parent) n.delete(`f:${f.path}`);
+      }
+      return n;
+    });
+    requestAnimationFrame(() => document.querySelector(`.rs-hierarchies .rs-row[data-key="g:${sel[0].id}"]`)?.scrollIntoView({ block: 'nearest' }));
+  };
 
   const clickRow = (r: Row, e: React.MouseEvent) => {
     if (r.kind === 'folder') return editor.selectFolder(r.folder.path);
@@ -170,18 +191,55 @@ export function Hierarchies() {
 
   return (
     <div className="rs-panel rs-hierarchies">
+      <div className="rs-hier-tools">
+        <button className="rs-tool" title="Select the selected objects' parents" disabled={!editor.selectedObjects.some((g) => g.parent)} onClick={() => editor.select([...new Set(editor.selectedObjects.map((g) => (g.parent ?? g).id))])}>
+          <Icons.Cursor size={13} />
+        </button>
+        <button className="rs-tool" title="Refresh" onClick={() => editor.emit('scene')}>
+          <Icons.Refresh size={13} />
+        </button>
+        <button className="rs-tool" title="Collapse all" onClick={() => setCollapsed(new Set(allKeys(scene)))}>
+          <Icons.CollapseAll size={13} />
+        </button>
+        <button className="rs-tool" title="Expand all" onClick={() => setCollapsed(new Set())}>
+          <Icons.ExpandAll size={13} />
+        </button>
+        <button className="rs-tool" title="Reveal the selection (expand its parents and scroll to it)" disabled={!editor.selection.length} onClick={() => reveal()}>
+          <Icons.Focus size={13} />
+        </button>
+        <span className="rs-sep" />
+        <button className="rs-tool" title="New folder" onClick={() => editor.createFolder()}>
+          <Icons.Folder size={13} />
+        </button>
+        <button className="rs-tool" title="New GameObject (Ctrl+Shift+N)" onClick={() => editor.create('Empty')}>
+          <Icons.Empty size={13} />
+        </button>
+        <span className="rs-grow" />
+        <select className="rs-hier-interval" title="Refresh interval while playing" value={editor.view.hierarchyInterval} onChange={(e) => editor.setView({ hierarchyInterval: +e.target.value })}>
+          {[100, 250, 500, 1000, 2000].map((ms) => (
+            <option key={ms} value={ms}>
+              {ms}ms
+            </option>
+          ))}
+        </select>
+      </div>
       <div className="rs-panel-tools">
         <div className="rs-search">
           <Icons.Search size={12} />
           <input placeholder="Search" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <span className="rs-search-filter" title="Search by: name, then 't:Type' for a component type">
+            <Icons.Filter size={11} />
+          </span>
         </div>
       </div>
-      <div className="rs-scene-tab">
-        <Icons.Scene size={12} />
-        <span>
-          {scene.name}
-          {editor.dirty ? '*' : ''}
-        </span>
+      <div className="rs-scene-tabs">
+        <div className="rs-scene-tab" title={scene.path ?? 'Unsaved scene'}>
+          <Icons.Scene size={12} />
+          <span>
+            {editor.prefabMode ? editor.prefabMode.path.slice(editor.prefabMode.path.lastIndexOf('/') + 1) : scene.name}
+            {editor.dirty ? '*' : ''}
+          </span>
+        </div>
       </div>
       <div className="rs-tree" onContextMenu={(e) => rowMenu(null, e)} onDragOver={(e) => onDragOver(null, e)} onDrop={(e) => onDrop(null, e)} onMouseDown={(e) => e.target === e.currentTarget && editor.select([])} tabIndex={0} onKeyDown={(e) => {
         if (e.key === 'F2') {
@@ -212,7 +270,17 @@ export function Hierarchies() {
               data-key={r.key}
             >
               <RowToggles row={r} />
-              <span className={`rs-row-box${selected ? " on" : ""}`} />
+              {r.kind === 'object' ? (
+                <span
+                  className={`rs-row-box${editor.isLockedSelf(r.go) ? ' on' : editor.isLocked(r.go) ? ' inherited' : ''}`}
+                  title="Lock (not pickable in the Runtime view)"
+                  onMouseDown={(e) => (e.stopPropagation(), editor.setLocked(r.go, !editor.isLockedSelf(r.go)))}
+                >
+                  {editor.isLocked(r.go) ? <Icons.Lock size={9} /> : null}
+                </span>
+              ) : (
+                <span className="rs-row-box blank" />
+              )}
               <span className="rs-indent" style={{ width: r.depth * 14 }} />
               <span className={`rs-arrow${hasKids ? '' : ' empty'}${collapsed.has(r.key) ? '' : ' open'}`} onMouseDown={(e) => (e.stopPropagation(), hasKids && toggle(r.key))}>
                 {hasKids ? <Icons.Chevron size={10} /> : null}
@@ -246,6 +314,23 @@ export function Hierarchies() {
       </div>
     </div>
   );
+}
+
+/** Keys of every row that can be collapsed (folders + objects with children). */
+function allKeys(scene: { root: Folder }): string[] {
+  const out: string[] = [];
+  const obj = (g: GameObject) => {
+    if (g.children.length) out.push(`g:${g.id}`);
+    g.children.forEach(obj);
+  };
+  const fold = (f: Folder) => {
+    out.push(`f:${f.path}`);
+    f.folders.forEach(fold);
+    f.gameObjects.forEach(obj);
+  };
+  scene.root.folders.forEach(fold);
+  scene.root.gameObjects.forEach(obj);
+  return out;
 }
 
 /** Update / draw switches of a row (RE's two toggles; folders: one activation for both). */

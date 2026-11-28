@@ -9,8 +9,9 @@ AssetBrowser, Console. Sister engines by the same owner: PiaEngine (Unity-like, 
 
 ## Working with the owner
 - Reply in **Vietnamese**. User docs (README.md) are Vietnamese; code, comments, CLAUDE.md and docs/ai are English.
-- Commits: local commits at verified milestones are allowed; there is no remote yet (don't push). End messages with the
-  Co-Authored-By line. Never force / amend.
+- Commits: commit + push (origin = GitHub) at verified milestones are allowed. The msys2 git on PATH hangs on credentials:
+  push with `E:/App/Git/cmd/git.exe push`. End messages with the Co-Authored-By line. Never force / amend. Never commit the
+  owner's untracked files (e.g. `002.jpg`, the RE editor screenshot used as the UI reference).
 - Mirror RE Engine concepts and workflow under **original names** (`rs.*`, no Capcom names, logos or UI art).
 - Verify for real: `node scripts/test.mjs`, typecheck, the editor and builds in headless Chrome (docs/ai/testing.md).
 
@@ -90,6 +91,10 @@ scripts/e2e/             headless Chrome driver (driver.mjs) + editor / game che
   shared object every tick and switch to it (keeping the state when it still exists).
 - The editor reloads the open scene when its file changes on disk and nothing is unsaved — another editor process saving the same
   project overwrites in-memory work otherwise (two editors on one project = last save wins).
+- Editor chrome follows `002.jpg` (RE editor screenshot, reference only — original drawings / names): panel title bars use
+  `FrameButtons` (ui/Frame.tsx: ? / pin / close), view display options live in `editor.view` (`setView` saves them and emits
+  'gizmo'; the Runtime view reads them every frame), object locks are editor-only (`editor.isLocked`, localStorage per scene),
+  Macro Shelf entries are data (`SHELVES` in App.tsx) — add buttons there; components for the selection via `addToSelection`.
 - Theme: colours are CSS variables in styles.css `:root` (RE-style dark grey + blue `--accent`; the "RE-style look" block at the end of styles.css overrides the earlier rules); controls (select, checkbox, range, colour) are
   restyled with `appearance: none` — new controls must use them, not browser defaults.
 - Rapier 0.21's character-controller snap-to-ground sometimes returns the full downward displacement for a resting character
